@@ -112,16 +112,16 @@ def fetch_bom_data(product_id):
                 
                 if forecast_icon_code is not None:
                     description = area.get("description")
-                    forecast_now_precis = forecast_period_now.find("text[@type='precis']").text if forecast_period_now.find("text[@type='precis']") else "No description"
-                    forecast_now_pop = forecast_period_now.find("text[@type='probability_of_precipitation']").text if forecast_period_now.find("text[@type='probability_of_precipitation']") else "No data"
+                    forecast_now_precis = forecast_period_now.find("text[@type='precis']").text if forecast_period_now.find("text[@type='precis']") is not None else "No description"
+                    forecast_now_pop = forecast_period_now.find("text[@type='probability_of_precipitation']").text if forecast_period_now.find("text[@type='probability_of_precipitation']") is not None else "No data"
 
                     # Get forecast period for the immediate future
                     forecast_period_future = area.find("forecast-period[@index='1']")
                     if forecast_period_future is not None:
-                        future_min_temp = forecast_period_future.find("element[@type='air_temperature_minimum']").text if forecast_period_future.find("element[@type='air_temperature_minimum']") else "No data"
-                        future_max_temp = forecast_period_future.find("element[@type='air_temperature_maximum']").text if forecast_period_future.find("element[@type='air_temperature_maximum']") else "No data"
-                        forecast_future_precis = forecast_period_future.find("text[@type='precis']").text if forecast_period_future.find("text[@type='precis']") else "No description"
-                        forecast_future_pop = forecast_period_future.find("text[@type='probability_of_precipitation']").text if forecast_period_future.find("text[@type='probability_of_precipitation']") else "No data"
+                        future_min_temp = forecast_period_future.find("element[@type='air_temperature_minimum']").text if forecast_period_future.find("element[@type='air_temperature_minimum']") is not None else "No data"
+                        future_max_temp = forecast_period_future.find("element[@type='air_temperature_maximum']").text if forecast_period_future.find("element[@type='air_temperature_maximum']") is not None else "No data"
+                        forecast_future_precis = forecast_period_future.find("text[@type='precis']").text if forecast_period_future.find("text[@type='precis']") is not None else "No description"
+                        forecast_future_pop = forecast_period_future.find("text[@type='probability_of_precipitation']").text if forecast_period_future.find("text[@type='probability_of_precipitation']") is not None else "No data"
 
                         return (
                             f"Weather in {description}, {STATION_COUNTRY}: {forecast_now_precis} "
@@ -174,7 +174,8 @@ def generate_news_script(news_items, prompt_instructions, station_name, reader_n
 
     max_tokens = 4095
     news_content = "\n\n".join(
-        [f"{item['TITLE']}\n{item['DESCRIPTION']}" for item in news_items]
+        [f"{index + 1}. **Headline:** {item['TITLE']}\n   **Category:** {item.get('CATEGORY', 'General')}\n   **Description:** {item['DESCRIPTION']}"
+        for index, item in enumerate(news_items)]
     )
     station_ident = f'Station Name is "{station_name}"\nStation city is "{STATION_CITY}"\nStation country is "{STATION_COUNTRY}"\nNews reader name is "{reader_name}"'
     time_ident = f'Current date and time is "{current_time}"\n'
@@ -372,7 +373,6 @@ def generate_mixed_audio(sfx_file, speech_file, timing):
 
     return combined_audio
 
-
 def main():
     """Main function that fetches, parses, and processes the RSS feed into audio."""
     feed_url = os.getenv('NEWS_READER_RSS', 'https://www.sbs.com.au/news/topic/latest/feed')
@@ -412,9 +412,11 @@ def main():
     # Fetch BOM weather data
     weather_info = fetch_bom_data(BOM_PRODUCT_ID)
     
-    # Append weather info as the first item in the news items if available
-    if weather_info:
+    # Append weather info as the first item in the news items if available and valid
+    if weather_info and "No data" not in weather_info and "No description" not in weather_info:
         news_items.insert(0, {'TITLE': 'Weather Report', 'DESCRIPTION': weather_info, 'CATEGORY': 'weather'})
+    else:
+        logging.warning("Valid weather data not available. Skipping weather report.")
 
     news_script = generate_news_script(
         news_items, prompt_instructions, station_name, reader_name, current_time, openai_api_key
