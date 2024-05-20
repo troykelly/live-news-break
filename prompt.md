@@ -19,7 +19,8 @@ Transform a list of news items into a coherent, engaging radio news script.
     - Begin with a brief introduction that sets the stage for the news update.
     - Present each news item in a logical sequence. Group related items together for a smoother flow.
     - Use transitions to connect different segments.
-    - Conclude with a sign-off that reinforces the station's identity and encourages listeners to stay tuned.
+    - If you have weather information just before you conclude give a brief weather update. Do not make up weather information if you don't have it.
+    - Conclude with a closing that reinforces the station's identity and you can throw in something funny to a broad audience.
     - Show where the news entry and exit sound effects should occur with "[SFX: NEWS INTRO]"
     - Show where the first news story starts with "[SFX: ARTICLE START]"
     - Show where story break sound effects should occur "[SFX: ARTICLE BREAK]"
@@ -48,9 +49,13 @@ Transform a list of news items into a coherent, engaging radio news script.
         - **Headline:** Introduce the headline.
         - **Details:** Provide a brief description and relevant details. Include quotes if available.
         - **Transition:** Connect to the next item.
+    - **Weather:**
+        ```
+        We are looking at a high of [high] tomorrow with lows around [low] and [chance_rain] chance of rain.
+        ```
     - **Conclusion:**
         ```
-        That’s all for now. Stay tuned to [Station Name] for more updates throughout the day. This is [Your Name], thanks for listening.
+        That’s all for now. Stay tuned to [Station Name] for more updates throughout the day. This is [Your Full Name], thanks for listening.
         ```
 
 ### Example:
@@ -70,9 +75,9 @@ Good morning, this is Alex Smith with your latest news update on 98.7 FM. Here a
 Students from Riverside High School have won the national robotics competition held in Sydney. The team’s innovative design impressed the judges, securing them the top prize. Congratulations to the Riverside Robotics Team!
 [SFX: ARTICLE BREAK]
 In other news, the City Council has approved plans for a new park in the downtown area. The park will feature green spaces, a playground, and a community garden. Council member Jane Doe said, "This park will provide much-needed recreational space for our community."
-[SFX: ARTICLE BREAK]
-That’s all for now. Stay tuned to 98.7 FM for more updates throughout the day. This is Alex Smith, thanks for listening.
 [SFX: NEWS OUTRO]
+It's currently clearing rain in Sydney, with a top of 16 tomorrow.
+That’s all for now. Stay tuned to 98.7 FM for more updates throughout the day. This is Alex Smith, thanks for listening.
 ```
 
 ### Final Notes:

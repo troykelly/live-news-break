@@ -12,6 +12,7 @@ from pathlib import Path
 from pydub import AudioSegment  # Ensure you have ffmpeg installed
 from tempfile import NamedTemporaryFile
 from random import choice
+from ftplib import FTP
 
 logging.basicConfig(level=logging.INFO)
 
@@ -86,27 +87,52 @@ def fetch_bom_data(product_id):
     Returns:
         str or None: Weather information as a string if successful, None otherwise.
     """
-    ftp_url = f'ftp://ftp.bom.gov.au/anon/gen/fwo/{product_id}.xml'
-    
+    ftp_url = 'ftp.bom.gov.au'
+    ftp_path = f'anon/gen/fwo/{product_id}.xml'
+
     try:
-        response = requests.get(ftp_url)
-        response.raise_for_status()
-        
-        # Use XML parsing to extract weather data
-        root = ET.fromstring(response.content)
-        
-        # Find the area description matching the station city
-        for area in root.findall(".//area[@description='Sydney']"):
-            periods = area.findall("forecast-period")
-            if periods:
-                forecast_text = periods[0].find("text[@type='forecast']").text
-                return (
-                    f"Weather in {STATION_CITY}, {STATION_COUNTRY}: {forecast_text}"
-                )
-        
-        # If no specific weather data for Sydney is found
+        # Connect to the FTP server and retrieve the file
+        ftp = FTP(ftp_url)
+        ftp.login()
+        weather_data = []
+
+        ftp.retrbinary('RETR ' + ftp_path, weather_data.append)
+        ftp.quit()
+
+        # Join the retrieved binary data and parse as XML
+        weather_data = b''.join(weather_data)
+        root = ET.fromstring(weather_data)
+
+        # Find the first area that has forecast data
+        for area in root.findall(".//area"):
+            forecast_period_now = area.find("forecast-period[@index='0']")
+            
+            if forecast_period_now is not None:
+                forecast_icon_code = forecast_period_now.find("element[@type='forecast_icon_code']")
+                
+                if forecast_icon_code is not None:
+                    description = area.get("description")
+                    forecast_now_precis = forecast_period_now.find("text[@type='precis']").text if forecast_period_now.find("text[@type='precis']") else "No description"
+                    forecast_now_pop = forecast_period_now.find("text[@type='probability_of_precipitation']").text if forecast_period_now.find("text[@type='probability_of_precipitation']") else "No data"
+
+                    # Get forecast period for the immediate future
+                    forecast_period_future = area.find("forecast-period[@index='1']")
+                    if forecast_period_future is not None:
+                        future_min_temp = forecast_period_future.find("element[@type='air_temperature_minimum']").text if forecast_period_future.find("element[@type='air_temperature_minimum']") else "No data"
+                        future_max_temp = forecast_period_future.find("element[@type='air_temperature_maximum']").text if forecast_period_future.find("element[@type='air_temperature_maximum']") else "No data"
+                        forecast_future_precis = forecast_period_future.find("text[@type='precis']").text if forecast_period_future.find("text[@type='precis']") else "No description"
+                        forecast_future_pop = forecast_period_future.find("text[@type='probability_of_precipitation']").text if forecast_period_future.find("text[@type='probability_of_precipitation']") else "No data"
+
+                        return (
+                            f"Weather in {description}, {STATION_COUNTRY}: {forecast_now_precis} "
+                            f"with a {forecast_now_pop} chance of precipitation. For tomorrow, "
+                            f"expect a low of {future_min_temp}°C and a high of {future_max_temp}°C with {forecast_future_precis} "
+                            f"and a {forecast_future_pop} chance of precipitation."
+                        )
+
+        # If no forecast data is found
         return None
-    
+
     except Exception as e:
         logging.error(f"Failed to fetch BOM data: {e}")
         return None
@@ -150,7 +176,7 @@ def generate_news_script(news_items, prompt_instructions, station_name, reader_n
     news_content = "\n\n".join(
         [f"{item['TITLE']}\n{item['DESCRIPTION']}" for item in news_items]
     )
-    station_ident = f'Station Name is "{station_name}"\nNews reader name is "{reader_name}"'
+    station_ident = f'Station Name is "{station_name}"\nStation city is "{STATION_CITY}"\nStation country is "{STATION_COUNTRY}"\nNews reader name is "{reader_name}"'
     time_ident = f'Current date and time is "{current_time}"\n'
 
     prompt_length = len(prompt_instructions.split())
@@ -165,6 +191,8 @@ def generate_news_script(news_items, prompt_instructions, station_name, reader_n
     user_prompt = (
         time_ident + station_ident + "\n\n" + news_content
     )
+    
+    logging.info(f"User prompt: {user_prompt}")
 
     try:
         response = client.chat.completions.create(
@@ -386,7 +414,7 @@ def main():
     
     # Append weather info as the first item in the news items if available
     if weather_info:
-        news_items.insert(0, {'TITLE': 'Weather Report', 'DESCRIPTION': weather_info})
+        news_items.insert(0, {'TITLE': 'Weather Report', 'DESCRIPTION': weather_info, 'CATEGORY': 'weather'})
 
     news_script = generate_news_script(
         news_items, prompt_instructions, station_name, reader_name, current_time, openai_api_key
