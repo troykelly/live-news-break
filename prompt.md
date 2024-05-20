@@ -42,7 +42,7 @@ Transform a list of news items into a coherent, engaging radio news script.
 6. **Sample Script Structure:**
     - **Introduction:**
         ```
-        Good [morning/afternoon/evening], this is [Your Name] with your latest news update on [Station Name]. Here are today's top stories...
+        Good [morning/afternoon/evening], this is [Your Full Name] with your latest news update on [Station Name]. Here are today's top stories...
         ```
     - **News Items:**
         - **Headline:** Introduce the headline.

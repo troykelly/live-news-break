@@ -138,10 +138,9 @@ def generate_news_script(news_items, prompt_instructions, station_name, reader_n
     except openai.OpenAIError as e:
         raise openai.OpenAIError(f"An error occurred with the OpenAI API: {e}")
 
-
 def generate_speech(news_script_chunk, api_key, voice, quality, output_format):
     """Generates spoken audio from the given text script chunk using OpenAI's TTS API.
-
+    
     Args:
         news_script_chunk (str): News script chunk to be converted to audio.
         api_key (str): OpenAI API key.
@@ -164,10 +163,17 @@ def generate_speech(news_script_chunk, api_key, voice, quality, output_format):
 
         with NamedTemporaryFile(delete=False, suffix=f".{output_format}") as temp_audio_file:
             temp_audio_file.write(response.content)
-        return temp_audio_file.name
+            temp_audio_file_path = temp_audio_file.name
+
+        # Normalize the audio
+        audio = AudioSegment.from_file(temp_audio_file_path)
+        normalized_audio = audio.apply_gain(-audio.max_dBFS)  # Normalize to 0 dBFS
+
+        normalized_audio.export(temp_audio_file_path, format=output_format)
+        
+        return temp_audio_file_path
     except openai.OpenAIError as e:
         raise openai.OpenAIError(f"An error occurred with the OpenAI TTS API: {e}")
-
 
 def read_prompt_file(file_path):
     """Reads the contents of a prompt file with error handling.
