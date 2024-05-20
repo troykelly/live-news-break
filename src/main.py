@@ -269,7 +269,9 @@ def generate_mixed_audio(sfx_file, speech_file, timing):
     if timing.lower() != "none":
         timing_offset = int(timing)
         sfx_duration = len(sfx_audio)
-        logging.info(f"Overlaying speech at offset {timing_offset}ms of SFX duration {sfx_duration}ms")
+        speech_duration = len(speech_audio)
+        total_duration = timing_offset + speech_duration
+        logging.info(f"Overlaying speech at offset {timing_offset}ms of SFX duration {sfx_duration}ms for total duration of {total_duration}ms")
 
         if timing_offset > sfx_duration:
             # Add silence after SFX for the timing offset
@@ -278,6 +280,9 @@ def generate_mixed_audio(sfx_file, speech_file, timing):
         else:
             # Overlay speech onto SFX at the specified timing offset
             combined_audio = sfx_audio.overlay(speech_audio, position=timing_offset)
+            if timing_offset + speech_duration > sfx_duration:
+                # Add remaining speech to the end if extends beyond SFX
+                combined_audio = combined_audio + speech_audio[sfx_duration-timing_offset:]
     else:
         logging.info("No overlay timing specified, appending speech to SFX")
         combined_audio = sfx_audio + speech_audio
