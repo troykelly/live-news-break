@@ -585,10 +585,22 @@ def main():
         logging.warning("No news items found in the feed.")
         return
 
-    # Fetch BOM weather data
-    weather_info = fetch_bom_data(BOM_PRODUCT_ID)
-    
-    # Append weather info as the first item in the news items if available and valid
+    weather_info = None
+
+    openweather_api_key = os.getenv('OPENWEATHER_API_KEY')
+    openweather_lat = os.getenv('OPENWEATHER_LAT')
+    openweather_lon = os.getenv('OPENWEATHER_LON')
+    openweather_units = os.getenv('OPENWEATHER_UNITS', 'metric')  # default to metric if not set
+
+    if openweather_api_key and openweather_lat and openweather_lon:
+        weather_data = fetch_openweather_data(openweather_api_key, openweather_lat, openweather_lon, openweather_units)
+        if weather_data:
+            weather_info = generate_openweather_weather_report(weather_data, openweather_units)
+    else:
+        bom_product_id = os.getenv('BOM_PRODUCT_ID')
+        if bom_product_id:
+            weather_info = fetch_bom_data(bom_product_id)
+
     if weather_info and "No data" not in weather_info and "No description" not in weather_info:
         news_items.insert(0, {'TITLE': 'Weather Report', 'DESCRIPTION': weather_info, 'CATEGORY': 'weather'})
     else:
