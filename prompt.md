@@ -27,6 +27,7 @@ Transform a list of news items into a coherent, engaging radio news script.
     - Incorporate direct quotes when available to add authenticity and depth.
     - Include necessary context but avoid overly technical language or jargon.
     - Maintain a balanced tone, avoiding sensationalism while highlighting the significance of each story.
+    - Do not editorialise.
 
 5. **Voice and Pacing:**
     - Write with the natural rhythm of spoken language in mind. Read the script aloud to ensure it sounds smooth and natural.
@@ -69,6 +70,7 @@ That’s all for now. Stay tuned to 98.7 FM for more updates throughout the day.
 ### Final Notes:
 - Review the script for accuracy and clarity.
 - Ensure the script adheres to the station's style and standards.
+- Make sure to use the correct greeting (morning, afternoon, evening) based on the time.
 - Make sure that quotes have not been modified, you must be word-for-word accuracte when quoting somebody directly.
 - Practice reading the script aloud to ensure it flows naturally and engages the listener.
 

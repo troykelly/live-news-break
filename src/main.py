@@ -1,3 +1,4 @@
+
 import os
 import re
 import feedparser
@@ -6,7 +7,8 @@ import pytz
 from openai import OpenAI
 from datetime import datetime
 from pathlib import Path
-
+from pydub import AudioSegment  # Ensure you have pydub and ffmpeg installed
+from tempfile import NamedTemporaryFile
 
 # RSS Feed configuration
 FEED_CONFIG = {
@@ -43,66 +45,105 @@ def parse_rss_feed(feed_url, config):
     return parsed_items
 
 def generate_news_script(news_items, prompt_instructions, station_name, reader_name, current_time, api_key):
-    """Generates a news script using the OpenAI API with given news items and prompt instructions.
+    """Generates a news script using the OpenAI API with the given news items and prompt instructions.
     
     Args:
-        news_items: A list of dictionaries representing news articles.
-        prompt_instructions: A string containing the GPT-4 prompt instructions.
-        station_name: The stations name
-        reader_name: The news readers name
-        current_time: The current time as a string
-        api_key: A string representing the OpenAI API key.
+        news_items (list): A list of dictionaries representing news articles.
+        prompt_instructions (str): A string containing the GPT-4 prompt instructions.
+        station_name (str): The station's name.
+        reader_name (str): The news reader's name.
+        current_time (str): The current time as a string.
+        api_key (str): A string representing the OpenAI API key.
     
     Returns:
-        A string containing the generated script.
-        
+        str: A string containing the generated script.
+    
     Raises:
         ValueError: If news_items is empty or None.
         openai.error.OpenAIError: If an error occurs within the OpenAI API call.
     """
     if not news_items:
         raise ValueError("The list of news items is empty or None.")
-    
+
     client = OpenAI(api_key=api_key)
 
-    # Set the maximum number of tokens for the OpenAI API
+    # OpenAI GPT-4 token limit
     max_tokens = 4095
 
-    news_content = "\n\n".join([f"{item['TITLE']}\n{item['DESCRIPTION']}" for item in news_items])
-    station_ident = f"Station Name is \"{station_name}\"\nNews reader name is \"{reader_name}\""
-    
-    time_ident = f"Current date and time is \"{current_time}\"\n"
+    news_content = "\n\n".join(
+        [f"{item['TITLE']}\n{item['DESCRIPTION']}" for item in news_items]
+    )
+    station_ident = f'Station Name is "{station_name}"\nNews reader name is "{reader_name}"'
+    time_ident = f'Current date and time is "{current_time}"\n'
 
     prompt_length = len(prompt_instructions.split())
     news_length = len(news_content.split())
 
     # Check if the content is too long for the API
     if prompt_length + news_length > max_tokens:
-        raise ValueError(f"The combined length of the prompt instructions and news content exceeds the maximum token limit for the OpenAI API: {max_tokens} tokens.")
+        raise ValueError(
+            f"The combined length of the prompt instructions and news content "
+            f"exceeds the maximum token limit for the OpenAI API: {max_tokens} tokens."
+        )
 
-    full_prompt = prompt_instructions + "\n\n" + time_ident + station_ident + "\n\n" + news_content  # Concatenate instructions with news items
+    user_prompt = (
+        time_ident
+        + station_ident
+        + "\n\n"
+        + news_content
+    )  # Concatenate instructions with news items
 
     try:
         response = client.chat.completions.create(model="gpt-4o",
         messages=[
             {"role": "system", "content": prompt_instructions},
-            {"role": "user", "content": full_prompt}
+            {"role": "user", "content": user_prompt}
         ],
         max_tokens=max_tokens - prompt_length)  # Reserve space for the prompt)
         return response.choices[0].message.content
     except openai.OpenAIError as e:
         raise openai.OpenAIError(f"An error occurred with the OpenAI API: {e}")
-
-def generate_speech(news_script, api_key, voice, quality, output_file):
+    
+def split_script(news_script, max_length=4094):
     """
-    Generates spoken audio from the given text script using OpenAI's TTS API.
+    Splits the news script into manageable chunks, ensuring we split at paragraph boundaries.
     
     Args:
-        news_script: A string containing the news script to be converted to audio.
+        news_script: A string containing the entire news script to be converted.
+        max_length: The maximum character length for each chunk.
+    
+    Returns:
+        A list of strings, each representing a chunk of the news script.
+    """
+    paragraphs = news_script.split('\n\n')
+    chunks = []
+    current_chunk = ""
+    
+    for paragraph in paragraphs:
+        if len(current_chunk) + len(paragraph) + 2 > max_length:  # +2 accounts for the '\n\n'
+            chunks.append(current_chunk.strip())
+            current_chunk = paragraph
+        else:
+            current_chunk += ("\n\n" if current_chunk else "") + paragraph
+    
+    if current_chunk:
+        chunks.append(current_chunk.strip())
+    
+    return chunks
+
+def generate_speech(news_script_chunk, api_key, voice, quality, output_format):
+    """
+    Generates spoken audio from the given text script chunk using OpenAI's TTS API.
+    
+    Args:
+        news_script_chunk: A string containing the news script chunk to be converted to audio.
         api_key: A string representing the OpenAI API key.
         voice: A string representing the chosen voice for the TTS.
         quality: A string representing the chosen quality for the TTS (e.g. 'tts-1' or 'tts-1-hd').
-        output_file: A string representing the file path where the output audio will be saved.
+        output_format: A string representing the desired output audio format.
+    
+    Returns:
+        A temporary file containing the generated audio.
     """
     client = OpenAI(api_key=api_key)
 
@@ -110,10 +151,13 @@ def generate_speech(news_script, api_key, voice, quality, output_file):
         response = client.audio.speech.create(
             model=quality,
             voice=voice,
-            input=news_script
+            input=news_script_chunk,
+            response_format=output_format
         )
 
-        response.stream_to_file(output_file)
+        with NamedTemporaryFile(delete=False, suffix=f".{output_format}") as temp_audio_file:
+            temp_audio_file.write(response.content)  # Directly write the response content to the file
+        return temp_audio_file.name
     except openai.OpenAIError as e:
         raise openai.OpenAIError(f"An error occurred with the OpenAI TTS API: {e}")
 
@@ -144,6 +188,22 @@ def read_prompt_file(file_path):
     except Exception as e:
         raise Exception(f"An unexpected error occurred while reading the prompt file: {e}")
 
+def concatenate_audio_files(audio_files, output_path, output_format):
+    """
+    Concatenates a list of audio files into a single audio file.
+    
+    Args:
+        audio_files: A list of file paths representing the audio files to concatenate.
+        output_path: The file path where the concatenated audio will be saved.
+        output_format: The format of the output audio file (e.g., 'flac').
+    """
+    final_audio = AudioSegment.empty()
+    for audio_file in audio_files:
+        segment = AudioSegment.from_file(audio_file, format=output_format)
+        final_audio += segment
+    
+    final_audio.export(output_path, format=output_format)
+
 def main():
     """Main function that fetches, parses, and processes the RSS feed into audio."""
     feed_url = os.getenv('NEWS_READER_RSS', 'https://www.sbs.com.au/news/topic/latest/feed')
@@ -151,13 +211,14 @@ def main():
     reader_name = os.getenv('NEWS_READER_READER_NAME', 'Burnie Housedown')
     tts_voice = os.getenv('NEWS_READER_TTS_VOICE', 'alloy')
     tts_quality = os.getenv('NEWS_READER_TTS_QUALITY', 'tts-1')
+    output_format = os.getenv('NEWS_READER_OUTPUT_FORMAT', 'flac')
 
     # Fetch the OpenAI API key from environment variables.
     openai_api_key = os.getenv('OPENAI_API_KEY')
     if openai_api_key is None:
         raise ValueError("The OpenAI API key must be set in the environment variable 'OPENAI_API_KEY'.")
 
-    # Load the prompt file path from the NEWS_READER_PROMPT_FILE environment variable, or use the default
+    # Load the prompt file path from the NEWS_READER_PROMPT_FILE environment variable, or use the default.
     prompt_file_path = os.getenv('NEWS_READER_PROMPT_FILE', './prompt.md')
 
     try:
@@ -173,7 +234,7 @@ def main():
     except Exception as e:
         print(f"Invalid timezone '{timezone_str}', defaulting to UTC")
         timezone = pytz.UTC
-    # Get the current time and date in the specified timezone
+    # Get the current time and date in the specified timezone.
     current_time = datetime.now(timezone).strftime('%Y-%m-%d %H:%M:%S %Z')
 
     # Parse the RSS feed using the defined configuration.
@@ -181,21 +242,27 @@ def main():
 
     # Generate the news script using the OpenAI API.
     news_script = generate_news_script(news_items, prompt_instructions, station_name, reader_name, current_time, openai_api_key)
-    
-    # Prepare the output file name with timestamp if template is provided
+   
+    print(f"# News Script\n\n{news_script}")
+
+    chunks = split_script(news_script)
+
     output_dir = os.getenv('NEWS_READER_OUTPUT_DIR', '.')
-    output_file_template = os.getenv('NEWS_READER_OUTPUT_FILE', 'livenews.%EXT%').replace('%EXT%', 'mp3')
+    output_file_template = os.getenv('NEWS_READER_OUTPUT_FILE', 'livenews.%EXT%').replace('%EXT%', output_format)
     output_file = output_file_template.replace('%Y%', datetime.now().strftime('%Y')).replace('%m%', datetime.now().strftime('%m')).replace('%d%', datetime.now().strftime('%d')).replace('%H%', datetime.now().strftime('%H')).replace('%M%', datetime.now().strftime('%M')).replace('%S%', datetime.now().strftime('%S'))
     output_file_path = Path(output_dir) / output_file
 
-    # Ensure the output directory exists and is writable
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     if not os.access(output_dir, os.W_OK):
         raise PermissionError(f"The output directory '{output_dir}' is not writable.")
 
-    # Generate speech audio from the script
-    generate_speech(news_script, openai_api_key, tts_voice, tts_quality, str(output_file_path))
+    audio_files = []
+    for chunk in chunks:
+        audio_file_path = generate_speech(chunk, openai_api_key, tts_voice, tts_quality, output_format)
+        audio_files.append(audio_file_path)
+
+    concatenate_audio_files(audio_files, str(output_file_path), output_format)
 
     print(f"News audio generated and saved to {output_file_path}")
 
