@@ -4,10 +4,12 @@ import feedparser
 import openai
 import pytz
 import logging
+import requests
+import xml.etree.ElementTree as ET
 from openai import OpenAI
 from datetime import datetime
 from pathlib import Path
-from pydub import AudioSegment  # Ensure you have pydub and ffmpeg installed
+from pydub import AudioSegment  # Ensure you have ffmpeg installed
 from tempfile import NamedTemporaryFile
 from random import choice
 
@@ -33,6 +35,11 @@ TIMINGS_ENV = {
     'BREAK': 'NEWS_READER_TIMING_BREAK',
     'FIRST': 'NEWS_READER_TIMING_FIRST'
 }
+
+# BOM data configuration
+BOM_PRODUCT_ID = os.getenv('NEWS_READER_BOM_PRODUCT_ID', 'IDN10064')
+STATION_CITY = os.getenv('NEWS_READER_STATION_CITY', 'Sydney')
+STATION_COUNTRY = os.getenv('NEWS_READER_STATION_COUNTRY', 'Australia')
 
 # RSS Feed configuration
 FEED_CONFIG = {
@@ -69,6 +76,40 @@ def parse_rss_feed(feed_url, config):
         parsed_items.append(item)
 
     return parsed_items
+
+def fetch_bom_data(product_id):
+    """Fetches the BOM data from the FTP server for the provided product ID.
+
+    Args:
+        product_id (str): The BOM product ID.
+
+    Returns:
+        str or None: Weather information as a string if successful, None otherwise.
+    """
+    ftp_url = f'ftp://ftp.bom.gov.au/anon/gen/fwo/{product_id}.xml'
+    
+    try:
+        response = requests.get(ftp_url)
+        response.raise_for_status()
+        
+        # Use XML parsing to extract weather data
+        root = ET.fromstring(response.content)
+        
+        # Find the area description matching the station city
+        for area in root.findall(".//area[@description='Sydney']"):
+            periods = area.findall("forecast-period")
+            if periods:
+                forecast_text = periods[0].find("text[@type='forecast']").text
+                return (
+                    f"Weather in {STATION_CITY}, {STATION_COUNTRY}: {forecast_text}"
+                )
+        
+        # If no specific weather data for Sydney is found
+        return None
+    
+    except Exception as e:
+        logging.error(f"Failed to fetch BOM data: {e}")
+        return None
 
 def get_timing_value(env_key, default="None"):
     """Retrieve the timing value from the environment.
@@ -137,6 +178,14 @@ def generate_news_script(news_items, prompt_instructions, station_name, reader_n
         return response.choices[0].message.content
     except openai.OpenAIError as e:
         raise openai.OpenAIError(f"An error occurred with the OpenAI API: {e}")
+
+def clean_script(script):
+    """Cleans the script by removing lines with formatting markers."""
+    cleaned_lines = []
+    for line in script.splitlines():
+        if line.strip() not in ["```plaintext", "```"]:
+            cleaned_lines.append(line)
+    return "\n".join(cleaned_lines)    
 
 def generate_speech(news_script_chunk, api_key, voice, quality, output_format):
     """Generates spoken audio from the given text script chunk using OpenAI's TTS API.
@@ -295,6 +344,7 @@ def generate_mixed_audio(sfx_file, speech_file, timing):
 
     return combined_audio
 
+
 def main():
     """Main function that fetches, parses, and processes the RSS feed into audio."""
     feed_url = os.getenv('NEWS_READER_RSS', 'https://www.sbs.com.au/news/topic/latest/feed')
@@ -331,6 +381,13 @@ def main():
         logging.warning("No news items found in the feed.")
         return
 
+    # Fetch BOM weather data
+    weather_info = fetch_bom_data(BOM_PRODUCT_ID)
+    
+    # Append weather info as the first item in the news items if available
+    if weather_info:
+        news_items.insert(0, {'TITLE': 'Weather Report', 'DESCRIPTION': weather_info})
+
     news_script = generate_news_script(
         news_items, prompt_instructions, station_name, reader_name, current_time, openai_api_key
     )
@@ -338,6 +395,9 @@ def main():
     if not news_script:
         logging.warning("Generated news script is empty.")
         return
+
+    # Clean the news script to remove formatting markers
+    news_script = clean_script(news_script)
 
     logging.info(f"# News Script\n\n{news_script}")
 
