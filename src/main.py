@@ -306,12 +306,14 @@ def main():
 
     audio_files = check_audio_files()
 
-    script_sections = re.split(
-        f"({INTRO_PLACEHOLDER}|{ARTICLE_START_PLACEHOLDER}|{ARTICLE_BREAK_PLACEHOLDER}|{OUTRO_PLACEHOLDER})",
-        news_script
+    # Split the script by placeholders
+    pattern = re.compile(
+        f"({re.escape(INTRO_PLACEHOLDER)}|{re.escape(ARTICLE_START_PLACEHOLDER)}|"
+        f"{re.escape(ARTICLE_BREAK_PLACEHOLDER)}|{re.escape(OUTRO_PLACEHOLDER)})"
     )
+    script_sections = pattern.split(news_script)
     script_sections = [section.strip() for section in script_sections if section.strip()]
-
+    
     output_dir = os.getenv('NEWS_READER_OUTPUT_DIR', '.')
     output_file_template = os.getenv('NEWS_READER_OUTPUT_FILE', 'livenews.%EXT%').replace('%EXT%', output_format)
     output_file = output_file_template.replace('%Y%', datetime.now().strftime('%Y')).replace(
