@@ -207,6 +207,97 @@ def fetch_openweather_data(api_key, lat, lon, units, weather_json_path):
         logging.error(f"Failed to fetch weather data from OpenWeatherMap: {e}")
         return None
 
+def convert_wind_speed(speed, units):
+    """Convert wind speed to the appropriate unit."""
+    if units == 'metric':
+        # Convert m/s to km/h
+        return speed * 3.6
+    return speed
+
+def wind_direction(deg):
+    """Convert wind direction in degrees to compass direction."""
+    directions = [
+        "North", "North North East", "North East", "East North East", "East", 
+        "East South East", "South East", "South South East", "South", 
+        "South South West", "South West", "West South West", "West", 
+        "West North West", "North West", "North North West"
+    ]
+    idx = int((deg + 11.25) / 22.5) % 16
+    return directions[idx]
+
+def format_datetime(dt):
+    """Format datetime to a full and human-readable format."""
+    # Suffixes for day of the month
+    day_suffix = lambda d: 'th' if 10 <= d % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(d % 10, 'th')
+    day = dt.day
+    suffix = day_suffix(day)
+    formatted_datetime = dt.strftime(f'%A the {day}{{suffix}} of %B %Y at %H:%M (%Z)')
+    return formatted_datetime.replace("{suffix}", suffix)
+
+def generate_openweather_weather_report(data, units='metric'):
+    """Generate a weather report from JSON data."""
+
+    timezone_offset = data['timezone_offset']
+    current_weather = data['current']
+    minutely_weather = data['minutely']
+    daily_weather = data['daily'][0]
+    next_day_weather = data['daily'][1]
+
+    # Convert timestamps to readable formats with timezone
+    current_time = datetime.fromtimestamp(current_weather['dt'], timezone(timedelta(seconds=timezone_offset)))
+    sunrise = datetime.fromtimestamp(current_weather['sunrise'], timezone(timedelta(seconds=timezone_offset)))
+    sunset = datetime.fromtimestamp(current_weather['sunset'], timezone(timedelta(seconds=timezone_offset)))
+
+    # Unit labels
+    temp_unit = '°C' if units == 'metric' else '°F'
+    wind_speed_unit = 'km/h' if units == 'metric' else 'mph'
+    
+    # Convert wind speed if necessary
+    wind_speed = convert_wind_speed(current_weather['wind_speed'], units)
+    wind_bearing = wind_direction(current_weather['wind_deg'])
+    
+    # Current weather report
+    current_report = (
+        f"Current Weather Update as of {format_datetime(current_time)}:\n"
+        f"Temperature: {current_weather['temp']}{temp_unit} (Feels like: {current_weather['feels_like']}{temp_unit})\n"
+        f"Humidity: {current_weather['humidity']}%\n"
+        f"Condition: {current_weather['weather'][0]['description'].capitalize()}\n"
+        f"Wind: {wind_speed:.2f} {wind_speed_unit} from the {wind_bearing}\n"
+        f"UV Index: {current_weather['uvi']}\n"
+        f"Sunrise at: {format_datetime(sunrise)}, Sunset at: {format_datetime(sunset)}\n"
+    )
+
+    # Immediate future weather
+    future_rain = [minute['precipitation'] for minute in minutely_weather[:60]]  # Next hour
+    future_total_rain = sum(future_rain)
+    if future_total_rain > 0:
+        immediate_future_report = (
+            f"In the immediate future, expect light rain with a total precipitation of "
+            f"{future_total_rain:.1f} mm over the next hour."
+        )
+    else:
+        immediate_future_report = "No significant precipitation expected in the immediate future."
+
+    # Convert next day wind speed
+    next_day_wind_speed = convert_wind_speed(next_day_weather['wind_speed'], units)
+    next_day_wind_bearing = wind_direction(next_day_weather['wind_deg'])
+
+    # Next day weather report
+    next_day_report = (
+        f"Weather Forecast for Tomorrow ({format_datetime(datetime.fromtimestamp(next_day_weather['dt'], timezone(timedelta(seconds=timezone_offset))))}):\n"
+        f"Day Temperature: {next_day_weather['temp']['day']}{temp_unit} (Feels like: {next_day_weather['feels_like']['day']}{temp_unit})\n"
+        f"Night Temperature: {next_day_weather['temp']['night']}{temp_unit} (Feels like: {next_day_weather['feels_like']['night']}{temp_unit})\n"
+        f"Condition: {next_day_weather['summary']}\n"
+        f"Humidity: {next_day_weather['humidity']}%\n"
+        f"Wind: {next_day_wind_speed:.2f} {wind_speed_unit} from the {next_day_wind_bearing}\n"
+        f"Chance of Rain: {next_day_weather['pop']*100}%"
+    )
+
+    # Combine all reports
+    full_report = f"{current_report}\n{immediate_future_report}\n\n{next_day_report}"
+    
+    return full_report
+
 def clean_text(input_string):
     """Remove HTML tags and non-human-readable content from the text."""
     cleanr = re.compile('<.*?>')
@@ -579,11 +670,13 @@ def main():
     final_audio.export(output_file_path, format=output_format)
     logging.info(f"News audio generated and saved to {output_file_path}")
 
-# if __name__ == '__main__':
-#     main()
-if __name__ == "__main__":
-    weather_data = fetch_openweather_data(OPENWEATHER_API_KEY, OPENWEATHER_LAT, OPENWEATHER_LON, OPENWEATHER_UNITS, WEATHER_JSON_PATH)
-    if weather_data:
-        print(json.dumps(weather_data, indent=2))
-    else:
-        print("Failed to retrieve weather data.")
+if __name__ == '__main__':
+    main()
+# if __name__ == "__main__":
+#     weather_data = fetch_openweather_data(OPENWEATHER_API_KEY, OPENWEATHER_LAT, OPENWEATHER_LON, OPENWEATHER_UNITS, WEATHER_JSON_PATH)
+#     if weather_data:
+#         print(json.dumps(weather_data, indent=2))
+#         weather_report = generate_openweather_weather_report(weather_data, OPENWEATHER_UNITS)
+#         print(weather_report)
+#     else:
+#         print("Failed to retrieve weather data.")
