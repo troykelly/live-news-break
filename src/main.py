@@ -1,14 +1,40 @@
-
 import os
 import re
 import feedparser
 import openai
 import pytz
+import logging
 from openai import OpenAI
 from datetime import datetime
 from pathlib import Path
 from pydub import AudioSegment  # Ensure you have pydub and ffmpeg installed
 from tempfile import NamedTemporaryFile
+from random import choice, randint
+
+
+logging.basicConfig(level=logging.DEBUG)
+
+# Constants for placeholders
+INTRO_PLACEHOLDER = "[SFX: NEWS INTRO]"
+ARTICLE_START_PLACEHOLDER = "[SFX: ARTICLE START]"
+ARTICLE_BREAK_PLACEHOLDER = "[SFX: ARTICLE BREAK]"
+OUTRO_PLACEHOLDER = "[SFX: NEWS OUTRO]"
+
+
+# Environment Variable configuration
+AUDIO_FILES_ENV = {
+    'INTRO': 'NEWS_READER_AUDIO_INTRO',
+    'OUTRO': 'NEWS_READER_AUDIO_OUTRO',
+    'BREAK': 'NEWS_READER_AUDIO_BREAK',
+    'FIRST': 'NEWS_READER_AUDIO_FIRST'
+}
+
+TIMINGS_ENV = {
+    'INTRO': 'NEWS_READER_TIMING_INTRO',
+    'OUTRO': 'NEWS_READER_TIMING_OUTRO',
+    'BREAK': 'NEWS_READER_TIMING_BREAK',
+    'FIRST': 'NEWS_READER_TIMING_FIRST'
+}
 
 # RSS Feed configuration
 FEED_CONFIG = {
@@ -204,6 +230,53 @@ def concatenate_audio_files(audio_files, output_path, output_format):
     
     final_audio.export(output_path, format=output_format)
 
+def get_random_file(file_path):
+    """Return the base file path or a random numbered file if exists."""
+    base_path = Path(file_path)
+    if not base_path.exists():
+        # Check for numbered files
+        numbered_files = list(base_path.parent.glob(f"{base_path.stem}_*.{base_path.suffix}"))
+        if not numbered_files:
+            logging.warning(f"Audio file {base_path} not found and no numbered alternatives exist.")
+            return None
+        return str(choice(numbered_files))
+    return str(base_path)
+
+def check_audio_files():
+    """Check the existence of necessary audio files in the environment."""
+    checked_files = {}
+    for key, env_var in AUDIO_FILES_ENV.items():
+        file_path = os.getenv(env_var, None)
+        if file_path:
+            random_file = get_random_file(file_path)
+            if random_file:
+                checked_files[key] = random_file
+    return checked_files
+
+def split_and_strip_script(news_script):
+    """Split the script by placeholders and return sections with placeholders."""
+    sections = re.split(f"({INTRO_PLACEHOLDER}|{ARTICLE_START_PLACEHOLDER}|{ARTICLE_BREAK_PLACEHOLDER}|{OUTRO_PLACEHOLDER})", news_script)
+    stripped_sections = [section.strip() for section in sections if section.strip()]
+    return stripped_sections
+
+def generate_mixed_audio(sfx_file, speech_file, timing):
+    """Generate the mixed audio segment based on provided timing."""
+    sfx_audio = AudioSegment.from_file(sfx_file)
+    speech_audio = AudioSegment.from_file(speech_file)
+    
+    if timing:
+        timing_offset = int(timing)
+        sfx_duration = len(sfx_audio)
+        if timing_offset > sfx_duration:
+            padding = timing_offset - sfx_duration
+            combined_audio = sfx_audio + AudioSegment.silent(duration=padding) + speech_audio
+        else:
+            combined_audio = sfx_audio.overlay(speech_audio, position=timing_offset)
+    else:
+        combined_audio = sfx_audio + speech_audio
+    
+    return combined_audio
+
 def main():
     """Main function that fetches, parses, and processes the RSS feed into audio."""
     feed_url = os.getenv('NEWS_READER_RSS', 'https://www.sbs.com.au/news/topic/latest/feed')
@@ -224,7 +297,7 @@ def main():
     try:
         prompt_instructions = read_prompt_file(prompt_file_path)
     except Exception as e:
-        print(f"Error: {e}")
+        logging.error(f"Error reading prompt file: {e}")
         return
 
     # Timezone
@@ -232,7 +305,7 @@ def main():
     try:
         timezone = pytz.timezone(timezone_str)
     except Exception as e:
-        print(f"Invalid timezone '{timezone_str}', defaulting to UTC")
+        logging.error(f"Invalid timezone '{timezone_str}', defaulting to UTC")
         timezone = pytz.UTC
     # Get the current time and date in the specified timezone.
     current_time = datetime.now(timezone).strftime('%Y-%m-%d %H:%M:%S %Z')
@@ -243,9 +316,13 @@ def main():
     # Generate the news script using the OpenAI API.
     news_script = generate_news_script(news_items, prompt_instructions, station_name, reader_name, current_time, openai_api_key)
    
-    print(f"# News Script\n\n{news_script}")
+    logging.debug(f"# News Script\n\n{news_script}")
 
-    chunks = split_script(news_script)
+    # Check audio files
+    audio_files = check_audio_files()
+
+    # Split the script into sections
+    script_sections = split_and_strip_script(news_script)
 
     output_dir = os.getenv('NEWS_READER_OUTPUT_DIR', '.')
     output_file_template = os.getenv('NEWS_READER_OUTPUT_FILE', 'livenews.%EXT%').replace('%EXT%', output_format)
@@ -257,14 +334,39 @@ def main():
     if not os.access(output_dir, os.W_OK):
         raise PermissionError(f"The output directory '{output_dir}' is not writable.")
 
-    audio_files = []
-    for chunk in chunks:
-        audio_file_path = generate_speech(chunk, openai_api_key, tts_voice, tts_quality, output_format)
-        audio_files.append(audio_file_path)
+    final_audio = AudioSegment.empty()
+    speech_audio_files = []
+    current_index = 0
 
-    concatenate_audio_files(audio_files, str(output_file_path), output_format)
+    while current_index < len(script_sections):
+        section = script_sections[current_index]
+        if section in [INTRO_PLACEHOLDER, ARTICLE_START_PLACEHOLDER, ARTICLE_BREAK_PLACEHOLDER, OUTRO_PLACEHOLDER]:
+            sfx_key = section.split(":")[1].strip().replace(" ", "_")
+            sfx_file = audio_files.get(sfx_key.upper(), None)
+            timing_key = TIMINGS_ENV.get(sfx_key.upper(), None)
+            timing_value = os.getenv(timing_key, "None") if timing_key else "None"
 
-    print(f"News audio generated and saved to {output_file_path}")
+            if sfx_file:
+                if current_index + 1 < len(script_sections):
+                    speech_text = script_sections[current_index + 1]
+                    speech_audio_file = generate_speech(speech_text, openai_api_key, tts_voice, tts_quality, output_format)
+                    mixed_audio = generate_mixed_audio(sfx_file, speech_audio_file, timing_value)
+                    final_audio += mixed_audio
+                    speech_audio_files.append(speech_audio_file)
+                    current_index += 2
+                else:
+                    raise ValueError("SFX placeholder found at the end without subsequent text.")
+            else:
+                current_index += 1
+        else:
+            # Handle normal speech section without SFX
+            speech_audio_file = generate_speech(section, openai_api_key, tts_voice, tts_quality, output_format)
+            final_audio += AudioSegment.from_file(speech_audio_file)
+            speech_audio_files.append(speech_audio_file)
+            current_index += 1
+
+    final_audio.export(output_file_path, format=output_format)
+    logging.info(f"News audio generated and saved to {output_file_path}")
 
 if __name__ == '__main__':
     main()
