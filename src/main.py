@@ -6,13 +6,16 @@ import pytz
 import logging
 import xml.etree.ElementTree as ET
 import html
+import requests
+import json
 from openai import OpenAI
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from pydub import AudioSegment  # Ensure you have ffmpeg installed
 from tempfile import NamedTemporaryFile
 from random import choice
 from ftplib import FTP
+
 
 logging.basicConfig(level=logging.INFO)
 
@@ -37,10 +40,19 @@ TIMINGS_ENV = {
     'FIRST': 'NEWS_READER_TIMING_FIRST'
 }
 
+# Weather Data
+WEATHER_JSON_PATH = os.getenv('NEWS_READER_WEATHER_JSON', './weather.json')
+
 # BOM data configuration
 BOM_PRODUCT_ID = os.getenv('NEWS_READER_BOM_PRODUCT_ID', 'IDN10064')
 STATION_CITY = os.getenv('NEWS_READER_STATION_CITY', 'Sydney')
 STATION_COUNTRY = os.getenv('NEWS_READER_STATION_COUNTRY', 'Australia')
+
+# OpenWeather Variable configuration
+OPENWEATHER_API_KEY = os.getenv('OPENWEATHER_API_KEY')
+OPENWEATHER_LAT = os.getenv('OPENWEATHER_LAT')
+OPENWEATHER_LON = os.getenv('OPENWEATHER_LON')
+OPENWEATHER_UNITS = os.getenv('OPENWEATHER_UNITS', 'metric')
 
 # RSS Feed configuration
 FEED_CONFIG = {
@@ -138,6 +150,60 @@ def fetch_bom_data(product_id):
 
     except Exception as e:
         logging.error(f"Failed to fetch BOM data: {e}")
+        return None
+
+def fetch_openweather_data(api_key, lat, lon, units, weather_json_path):
+    """Fetches weather data from OpenWeatherMap API and caches the result in a JSON file.
+
+    Args:
+        api_key (str): The OpenWeatherMap API key.
+        lat (str): The latitude of the location for which to fetch weather data.
+        lon (str): The longitude of the location for which to fetch weather data.
+        units (str): Units of measurement ("standard", "metric", or "imperial").
+        weather_json_path (str): Path to the JSON file for storing fetched weather data.
+
+    Returns:
+        dict: Weather information as a dictionary if successful, None otherwise.
+    """
+    if not api_key or not lat or not lon:
+        logging.error("OpenWeather API key, latitude, or longitude not set.")
+        return None
+
+    weather_file = Path(weather_json_path)
+    current_time = datetime.utcnow()
+    
+    if weather_file.exists():
+        try:
+            with open(weather_json_path, 'r', encoding='utf-8') as file:
+                weather_data = json.load(file)
+                fetched_time = datetime.strptime(weather_data['dt'], '%Y-%m-%dT%H:%M:%SZ')
+                if current_time - fetched_time < timedelta(minutes=15):
+                    return weather_data['data']
+        except (json.JSONDecodeError, KeyError, ValueError) as e:
+            logging.warning(f"Error reading or parsing weather JSON file: {e}. Fetching new data.")
+    
+    # Fetch new data from OpenWeatherMap API due to stale data or parsing error
+    weather_api_url = (
+        f"https://api.openweathermap.org/data/3.0/onecall?lat={lat}&lon={lon}&units={units}&appid={api_key}"
+    )
+
+    try:
+        response = requests.get(weather_api_url)
+        response.raise_for_status()
+        weather_data = response.json()
+        
+        # Store the current time and weather data to JSON file
+        data_to_save = {
+            'dt': current_time.strftime('%Y-%m-%dT%H:%M:%SZ'),
+            'data': weather_data
+        }
+        with open(weather_json_path, 'w', encoding='utf-8') as file:
+            json.dump(data_to_save, file)
+        
+        return weather_data
+
+    except requests.RequestException as e:
+        logging.error(f"Failed to fetch weather data from OpenWeatherMap: {e}")
         return None
 
 def clean_text(input_string):
@@ -512,5 +578,11 @@ def main():
     final_audio.export(output_file_path, format=output_format)
     logging.info(f"News audio generated and saved to {output_file_path}")
 
-if __name__ == '__main__':
-    main()
+# if __name__ == '__main__':
+#     main()
+if __name__ == "__main__":
+    weather_data = fetch_openweather_data(OPENWEATHER_API_KEY, OPENWEATHER_LAT, OPENWEATHER_LON, OPENWEATHER_UNITS, WEATHER_JSON_PATH)
+    if weather_data:
+        print(json.dumps(weather_data, indent=2))
+    else:
+        print("Failed to retrieve weather data.")
