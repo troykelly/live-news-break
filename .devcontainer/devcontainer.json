@@ -37,7 +37,9 @@
 				"ms-python.python",
 				"ms-python.debugpy",
 				"KevinRose.vsc-python-indent",
-				"njpwerner.autodocstring"
+				"njpwerner.autodocstring",
+				"GitHub.copilot",
+				"GitHub.copilot-chat"
 			]
 		},
 	},

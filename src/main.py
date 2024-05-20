@@ -45,7 +45,6 @@ FEED_CONFIG = {
     ]
 }
 
-
 def parse_rss_feed(feed_url, config):
     """Parses the RSS feed, filtering out ignored articles using regex patterns.
 
@@ -71,6 +70,17 @@ def parse_rss_feed(feed_url, config):
 
     return parsed_items
 
+def get_timing_value(env_key, default="None"):
+    """Retrieve the timing value from the environment.
+
+    Args:
+        env_key (str): The environment variable key.
+        default (str): The default value if the variable is not set.
+
+    Returns:
+        str: The timing value as a string.
+    """
+    return os.getenv(env_key, default)
 
 def generate_news_script(news_items, prompt_instructions, station_name, reader_name, current_time, api_key):
     """Generates a news script using the OpenAI API.
@@ -117,7 +127,7 @@ def generate_news_script(news_items, prompt_instructions, station_name, reader_n
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": prompt_instructions},
                 {"role": "user", "content": user_prompt}
@@ -202,25 +212,32 @@ def concatenate_audio_files(audio_files, output_path, output_format):
 
     final_audio.export(output_path, format=output_format)
 
-
 def get_random_file(file_path):
     """Returns the base file path or a random numbered file if exists.
-
+    
     Args:
         file_path (str): Path to the audio file.
 
     Returns:
-        str: Path to the base file or a random numbered file.
+        str: Path to the base file or a random numbered file, or None if not found.
     """
     base_path = Path(file_path)
-    if not base_path.exists():
-        numbered_files = list(base_path.parent.glob(f"{base_path.stem}_*.{base_path.suffix}"))
-        if not numbered_files:
-            logging.warning(f"Audio file {base_path} not found and no numbered alternatives exist.")
-            return None
-        return str(choice(numbered_files))
-    return str(base_path)
+    if base_path.exists():
+        return str(base_path)
 
+    # Construct patterns to search for numbered files
+    stem = base_path.stem
+    suffix = base_path.suffix
+    parent = base_path.parent
+    numbered_files = list(parent.glob(f"{stem}_*{suffix}"))
+    
+    if numbered_files:
+        selected_file = str(choice(numbered_files))
+        logging.info(f"Using random audio file: {selected_file}")
+        return selected_file
+
+    logging.warning(f"Audio file {base_path} not found and no numbered alternatives exist.")
+    return None
 
 def check_audio_files():
     """Checks the existence of necessary audio files in the environment.
@@ -235,36 +252,37 @@ def check_audio_files():
             random_file = get_random_file(file_path)
             if random_file:
                 checked_files[key] = random_file
+                logging.info(f"Audio file found for {key}: {random_file}")
+            else:
+                logging.warning(f"Audio file for {key} specified as {file_path} was not found and no alternatives exist.")
+        else:
+            logging.warning(f"Environment variable {env_var} for {key} not set.")
     return checked_files
 
-
 def generate_mixed_audio(sfx_file, speech_file, timing):
-    """Generates mixed audio segment based on provided timing.
-
-    Args:
-        sfx_file (str): Path to the sound effect file.
-        speech_file (str): Path to the speech audio file.
-        timing (str): Timing value in milliseconds.
-
-    Returns:
-        AudioSegment: Mixed audio segment.
-    """
+    """Generate the mixed audio segment based on the provided timing."""
     sfx_audio = AudioSegment.from_file(sfx_file)
     speech_audio = AudioSegment.from_file(speech_file)
+    
+    logging.info(f"Mixing audio with timing: {timing}")
 
-    if timing and timing.lower() != "none":
+    if timing.lower() != "none":
         timing_offset = int(timing)
         sfx_duration = len(sfx_audio)
+        logging.info(f"Overlaying speech at offset {timing_offset}ms of SFX duration {sfx_duration}ms")
+
         if timing_offset > sfx_duration:
+            # Add silence after SFX for the timing offset
             padding = timing_offset - sfx_duration
             combined_audio = sfx_audio + AudioSegment.silent(duration=padding) + speech_audio
         else:
+            # Overlay speech onto SFX at the specified timing offset
             combined_audio = sfx_audio.overlay(speech_audio, position=timing_offset)
     else:
+        logging.info("No overlay timing specified, appending speech to SFX")
         combined_audio = sfx_audio + speech_audio
 
     return combined_audio
-
 
 def main():
     """Main function that fetches, parses, and processes the RSS feed into audio."""
@@ -298,22 +316,31 @@ def main():
 
     news_items = parse_rss_feed(feed_url, FEED_CONFIG)
 
+    if not news_items:
+        logging.warning("No news items found in the feed.")
+        return
+
     news_script = generate_news_script(
         news_items, prompt_instructions, station_name, reader_name, current_time, openai_api_key
     )
 
+    if not news_script:
+        logging.warning("Generated news script is empty.")
+        return
+
     logging.info(f"# News Script\n\n{news_script}")
 
     audio_files = check_audio_files()
+    logging.info(f"Checked audio files: {audio_files}")
 
-    # Split the script by placeholders
+    # Correctly split the script by placeholders
     pattern = re.compile(
         f"({re.escape(INTRO_PLACEHOLDER)}|{re.escape(ARTICLE_START_PLACEHOLDER)}|"
         f"{re.escape(ARTICLE_BREAK_PLACEHOLDER)}|{re.escape(OUTRO_PLACEHOLDER)})"
     )
     script_sections = pattern.split(news_script)
     script_sections = [section.strip() for section in script_sections if section.strip()]
-    
+
     output_dir = os.getenv('NEWS_READER_OUTPUT_DIR', '.')
     output_file_template = os.getenv('NEWS_READER_OUTPUT_FILE', 'livenews.%EXT%').replace('%EXT%', output_format)
     output_file = output_file_template.replace('%Y%', datetime.now().strftime('%Y')).replace(
@@ -330,15 +357,19 @@ def main():
     final_audio = AudioSegment.empty()
     speech_audio_files = []
     current_index = 0
+    placeholder_to_key = {
+        INTRO_PLACEHOLDER: "INTRO",
+        ARTICLE_START_PLACEHOLDER: "FIRST",
+        ARTICLE_BREAK_PLACEHOLDER: "BREAK",
+        OUTRO_PLACEHOLDER: "OUTRO"
+    }
 
     while current_index < len(script_sections):
         section = script_sections[current_index]
-        logging.info(f"Section: {section}")
-        if section in [INTRO_PLACEHOLDER, ARTICLE_START_PLACEHOLDER, ARTICLE_BREAK_PLACEHOLDER, OUTRO_PLACEHOLDER]:
-            sfx_key = section.split(":")[1].strip().replace(" ", "_")
-            sfx_file = audio_files.get(sfx_key.upper(), None)
-            timing_key = TIMINGS_ENV.get(sfx_key.upper(), None)
-            timing_value = os.getenv(timing_key, "None") if timing_key else "None"
+        if section in placeholder_to_key:
+            sfx_key = placeholder_to_key[section]
+            sfx_file = audio_files.get(sfx_key, None)
+            timing_value = get_timing_value(TIMINGS_ENV.get(sfx_key, "None"))
 
             if sfx_file:
                 if current_index + 1 < len(script_sections):
@@ -351,6 +382,7 @@ def main():
                 else:
                     raise ValueError("SFX placeholder found at the end without subsequent text.")
             else:
+                logging.warning(f"No SFX file for {section}")
                 current_index += 1
         else:
             speech_audio_file = generate_speech(section, openai_api_key, tts_voice, tts_quality, output_format)
@@ -360,7 +392,6 @@ def main():
 
     final_audio.export(output_file_path, format=output_format)
     logging.info(f"News audio generated and saved to {output_file_path}")
-
 
 if __name__ == '__main__':
     main()

@@ -1,6 +1,6 @@
 ---
 
-## Instructions for GPT-4 to Create a Radio News Script
+## Instructions for GPT-4o to Create a Radio News Script
 
 ### Objective:
 Transform a list of news items into a coherent, engaging radio news script.
