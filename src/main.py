@@ -11,7 +11,6 @@ from pydub import AudioSegment  # Ensure you have pydub and ffmpeg installed
 from tempfile import NamedTemporaryFile
 from random import choice, randint
 
-
 logging.basicConfig(level=logging.DEBUG)
 
 # Constants for placeholders
@@ -19,7 +18,6 @@ INTRO_PLACEHOLDER = "[SFX: NEWS INTRO]"
 ARTICLE_START_PLACEHOLDER = "[SFX: ARTICLE START]"
 ARTICLE_BREAK_PLACEHOLDER = "[SFX: ARTICLE BREAK]"
 OUTRO_PLACEHOLDER = "[SFX: NEWS OUTRO]"
-
 
 # Environment Variable configuration
 AUDIO_FILES_ENV = {
@@ -130,36 +128,8 @@ def generate_news_script(news_items, prompt_instructions, station_name, reader_n
     except openai.OpenAIError as e:
         raise openai.OpenAIError(f"An error occurred with the OpenAI API: {e}")
     
-def split_script(news_script, max_length=4094):
-    """
-    Splits the news script into manageable chunks, ensuring we split at paragraph boundaries.
-    
-    Args:
-        news_script: A string containing the entire news script to be converted.
-        max_length: The maximum character length for each chunk.
-    
-    Returns:
-        A list of strings, each representing a chunk of the news script.
-    """
-    paragraphs = news_script.split('\n\n')
-    chunks = []
-    current_chunk = ""
-    
-    for paragraph in paragraphs:
-        if len(current_chunk) + len(paragraph) + 2 > max_length:  # +2 accounts for the '\n\n'
-            chunks.append(current_chunk.strip())
-            current_chunk = paragraph
-        else:
-            current_chunk += ("\n\n" if current_chunk else "") + paragraph
-    
-    if current_chunk:
-        chunks.append(current_chunk.strip())
-    
-    return chunks
-
 def generate_speech(news_script_chunk, api_key, voice, quality, output_format):
-    """
-    Generates spoken audio from the given text script chunk using OpenAI's TTS API.
+    """Generates spoken audio from the given text script chunk using OpenAI's TTS API.
     
     Args:
         news_script_chunk: A string containing the news script chunk to be converted to audio.
@@ -215,8 +185,7 @@ def read_prompt_file(file_path):
         raise Exception(f"An unexpected error occurred while reading the prompt file: {e}")
 
 def concatenate_audio_files(audio_files, output_path, output_format):
-    """
-    Concatenates a list of audio files into a single audio file.
+    """Concatenates a list of audio files into a single audio file.
     
     Args:
         audio_files: A list of file paths representing the audio files to concatenate.
@@ -253,18 +222,12 @@ def check_audio_files():
                 checked_files[key] = random_file
     return checked_files
 
-def split_and_strip_script(news_script):
-    """Split the script by placeholders and return sections with placeholders."""
-    sections = re.split(f"({INTRO_PLACEHOLDER}|{ARTICLE_START_PLACEHOLDER}|{ARTICLE_BREAK_PLACEHOLDER}|{OUTRO_PLACEHOLDER})", news_script)
-    stripped_sections = [section.strip() for section in sections if section.strip()]
-    return stripped_sections
-
 def generate_mixed_audio(sfx_file, speech_file, timing):
     """Generate the mixed audio segment based on provided timing."""
     sfx_audio = AudioSegment.from_file(sfx_file)
     speech_audio = AudioSegment.from_file(speech_file)
     
-    if timing:
+    if timing and timing.lower() != "none":
         timing_offset = int(timing)
         sfx_duration = len(sfx_audio)
         if timing_offset > sfx_duration:
@@ -322,7 +285,8 @@ def main():
     audio_files = check_audio_files()
 
     # Split the script into sections
-    script_sections = split_and_strip_script(news_script)
+    script_sections = re.split(f"({INTRO_PLACEHOLDER}|{ARTICLE_START_PLACEHOLDER}|{ARTICLE_BREAK_PLACEHOLDER}|{OUTRO_PLACEHOLDER})", news_script)
+    script_sections = [section.strip() for section in script_sections if section.strip()]
 
     output_dir = os.getenv('NEWS_READER_OUTPUT_DIR', '.')
     output_file_template = os.getenv('NEWS_READER_OUTPUT_FILE', 'livenews.%EXT%').replace('%EXT%', output_format)
