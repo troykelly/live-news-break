@@ -4,8 +4,8 @@ import feedparser
 import openai
 import pytz
 import logging
-import requests
 import xml.etree.ElementTree as ET
+import html
 from openai import OpenAI
 from datetime import datetime
 from pathlib import Path
@@ -63,17 +63,20 @@ def parse_rss_feed(feed_url, config):
     Returns:
         list: List of dictionaries, each representing a news item.
     """
-    feed = feedparser.parse(feed_url)
+    feed = feedparser.parse(feed_url, agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36')
     parsed_items = []
-
+    
     for entry in feed.entries:
+        logging.info(f"Processing entry: {entry.title}")
         if any(re.search(pattern, entry.title) for pattern in config['IGNORE_PATTERNS']):
             continue
-
-        item = {config_field: entry.get(feed_field, None)
+        
+        categories = [clean_text(cat['term']) for cat in entry.get('tags', [])]
+        item = {config_field: clean_text(entry.get(feed_field, ''))
                 for config_field, feed_field in config.items()
-                if config_field != 'IGNORE_PATTERNS'}
-
+                if config_field not in ['IGNORE_PATTERNS', 'CATEGORY']}
+        item['CATEGORY'] = ', '.join(categories) if categories else 'General'
+        
         parsed_items.append(item)
 
     return parsed_items
@@ -137,6 +140,12 @@ def fetch_bom_data(product_id):
         logging.error(f"Failed to fetch BOM data: {e}")
         return None
 
+def clean_text(input_string):
+    """Remove HTML tags and non-human-readable content from the text."""
+    cleanr = re.compile('<.*?>')
+    cleantext = re.sub(cleanr, '', html.unescape(input_string))
+    return cleantext.strip()
+
 def get_timing_value(env_key, default="None"):
     """Retrieve the timing value from the environment.
 
@@ -172,26 +181,35 @@ def generate_news_script(news_items, prompt_instructions, station_name, reader_n
 
     client = OpenAI(api_key=api_key)
 
-    max_tokens = 4095
-    news_content = "\n\n".join(
-        [f"{index + 1}. **Headline:** {item['TITLE']}\n   **Category:** {item.get('CATEGORY', 'General')}\n   **Description:** {item['DESCRIPTION']}"
-        for index, item in enumerate(news_items)]
-    )
+    max_tokens = 8192
+    max_completion_tokens = 4095
+    prompt_length = len(prompt_instructions.split())
     station_ident = f'Station Name is "{station_name}"\nStation city is "{STATION_CITY}"\nStation country is "{STATION_COUNTRY}"\nNews reader name is "{reader_name}"'
     time_ident = f'Current date and time is "{current_time}"\n'
 
-    prompt_length = len(prompt_instructions.split())
-    news_length = len(news_content.split())
+    combined_prompt = time_ident + station_ident + "\n\n"
+    news_content = ""
+    news_length = 0
 
-    if prompt_length + news_length > max_tokens:
+    for index, item in enumerate(news_items):
+        new_entry = f"{index + 1}. **Headline:** {item['TITLE']}\n   **Category:** {item.get('CATEGORY', 'General')}\n   **Description:** {item['DESCRIPTION']}\n\n"
+        new_entry_length = len(new_entry.split())
+
+        if prompt_length + news_length + new_entry_length > max_tokens:
+            break
+
+        news_content += new_entry
+        news_length += new_entry_length
+
+    if not news_content:
+        logging.info(f"News Content: {news_content}")
+        logging.info(f"Prompt length: {prompt_length}, News length: {news_length}")
         raise ValueError(
             f"The combined length of the prompt instructions and news content "
             f"exceeds the maximum token limit for the OpenAI API: {max_tokens} tokens."
         )
 
-    user_prompt = (
-        time_ident + station_ident + "\n\n" + news_content
-    )
+    user_prompt = combined_prompt + news_content
     
     logging.info(f"User prompt: {user_prompt}")
 
@@ -202,7 +220,7 @@ def generate_news_script(news_items, prompt_instructions, station_name, reader_n
                 {"role": "system", "content": prompt_instructions},
                 {"role": "user", "content": user_prompt}
             ],
-            max_tokens=max_tokens - prompt_length
+            max_tokens=max_completion_tokens
         )
         return response.choices[0].message.content
     except openai.OpenAIError as e:
@@ -375,7 +393,7 @@ def generate_mixed_audio(sfx_file, speech_file, timing):
 
 def main():
     """Main function that fetches, parses, and processes the RSS feed into audio."""
-    feed_url = os.getenv('NEWS_READER_RSS', 'https://www.sbs.com.au/news/topic/latest/feed')
+    feed_url = os.getenv('NEWS_READER_RSS', 'https://rsshub.app/apnews/topics/apf-topnews')
     station_name = os.getenv('NEWS_READER_STATION_NAME', 'Live News 24')
     reader_name = os.getenv('NEWS_READER_READER_NAME', 'Burnie Housedown')
     tts_voice = os.getenv('NEWS_READER_TTS_VOICE', 'alloy')
