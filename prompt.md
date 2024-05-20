@@ -20,6 +20,12 @@ Transform a list of news items into a coherent, engaging radio news script.
     - Present each news item in a logical sequence. Group related items together for a smoother flow.
     - Use transitions to connect different segments.
     - Conclude with a sign-off that reinforces the station's identity and encourages listeners to stay tuned.
+    - Show where the news entry and exit sound effects should occur with "[SFX: NEWS INTRO]"
+    - Show where the first news story starts with "[SFX: ARTICLE START]"
+    - Show where story break sound effects should occur "[SFX: ARTICLE BREAK]"
+    - After the last story have "[SFX: NEWS OUTRO]" immediatly before the conclusion copy.
+    - Do not have an artical break SFX after the last article. Just denote the news outro.
+    - No other script notes are needed (ie, don't highlight the news reader on each article)
 
 4. **Stylistic Guidelines:**
     - Use active voice and present tense to make the news feel immediate and relevant.
@@ -58,13 +64,15 @@ Transform a list of news items into a coherent, engaging radio news script.
 
 **Output:**
 ```
+[SFX: NEWS INTRO]
 Good morning, this is Alex Smith with your latest news update on 98.7 FM. Here are today's top stories...
-
+[SFX: ARTICLE START]
 Students from Riverside High School have won the national robotics competition held in Sydney. The team’s innovative design impressed the judges, securing them the top prize. Congratulations to the Riverside Robotics Team!
-
+[SFX: ARTICLE BREAK]
 In other news, the City Council has approved plans for a new park in the downtown area. The park will feature green spaces, a playground, and a community garden. Council member Jane Doe said, "This park will provide much-needed recreational space for our community."
-
+[SFX: ARTICLE BREAK]
 That’s all for now. Stay tuned to 98.7 FM for more updates throughout the day. This is Alex Smith, thanks for listening.
+[SFX: NEWS OUTRO]
 ```
 
 ### Final Notes:
