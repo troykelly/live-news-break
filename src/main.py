@@ -9,7 +9,7 @@ import html
 import requests
 import json
 from openai import OpenAI
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from pydub import AudioSegment  # Ensure you have ffmpeg installed
 from tempfile import NamedTemporaryFile
@@ -170,13 +170,14 @@ def fetch_openweather_data(api_key, lat, lon, units, weather_json_path):
         return None
 
     weather_file = Path(weather_json_path)
-    current_time = datetime.utcnow()
+    current_time = datetime.now(timezone.utc)
     
     if weather_file.exists():
         try:
             with open(weather_json_path, 'r', encoding='utf-8') as file:
                 weather_data = json.load(file)
                 fetched_time = datetime.strptime(weather_data['dt'], '%Y-%m-%dT%H:%M:%SZ')
+                fetched_time = fetched_time.replace(tzinfo=timezone.utc)
                 if current_time - fetched_time < timedelta(minutes=15):
                     return weather_data['data']
         except (json.JSONDecodeError, KeyError, ValueError) as e:
