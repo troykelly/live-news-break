@@ -757,7 +757,11 @@ def generate_news_audio():
         logging.error(f"Invalid timezone '{timezone_str}', defaulting to UTC")
         timezone = pytz.UTC
 
-    current_time = datetime.now(timezone).strftime('%Y-%m-%d %H:%M:%S %Z')
+    # Handle timeshift
+    timeshift_millis = int(os.getenv('NEWS_READER_TIMESHIFT', '0'))
+    timeshift_delta = timedelta(milliseconds=timeshift_millis)
+
+    current_time = datetime.now(timezone) + timeshift_delta
 
     news_items = parse_rss_feed(feed_url, FEED_CONFIG)
 
