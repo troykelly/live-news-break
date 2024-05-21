@@ -178,14 +178,18 @@ def apply_lexicon(text, lexicon):
     Returns:
         str: The text after applying lexicon conversions.
     """
-    # Apply case-sensitive direct text to translation mappings, prioritize longer matches
-    for original, translation in sorted(lexicon.get("direct_sensitive", {}).items(), key=lambda x: -len(x[0])):
+    import re
+
+    # Sort and apply case-sensitive direct text to translation mappings (prioritize longer matches)
+    direct_sensitive = sorted(lexicon.get("direct_sensitive", {}).items(), key=lambda x: -len(x[0]))
+    for original, translation in direct_sensitive:
         text = text.replace(original, translation)
 
-    # Apply case-insensitive direct text to translation mappings, prioritize longer matches
-    for original, translation in sorted(lexicon.get("direct_insensitive", {}).items(), key=lambda x: -len(x[0])):
+    # Sort and apply case-insensitive direct text to translation mappings (prioritize longer matches)
+    direct_insensitive = sorted(lexicon.get("direct_insensitive", {}).items(), key=lambda x: -len(x[0]))
+    for original, translation in direct_insensitive:
         pattern = re.compile(re.escape(original), re.IGNORECASE)
-        text = pattern.sub(re.escape(translation), text)  # Ensure escaped replacements
+        text = pattern.sub(lambda m: translation, text)
 
     # Apply regex patterns with named groups
     for pattern, translation in lexicon.get("regex", {}).items():
