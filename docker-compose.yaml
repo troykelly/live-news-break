@@ -53,8 +53,5 @@ services:
       - NEWS_READER_OUTPUT_DIR=${NEWS_READER_OUTPUT_DIR}
       - NEWS_READER_OUTPUT_FILE=${NEWS_READER_OUTPUT_FILE}
 
-
-
     volumes:
       - ./audio:/app/audio
-    entrypoint: /app/src/main.py
