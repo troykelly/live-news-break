@@ -18,13 +18,15 @@ Listen to the demo here: [https://audio.com/troy-8/audio/troykelly-live-news-bre
 
 ## Test
 
-To test with docker:
+To test with docker, see the example command below.
+
+This will create a completly dry read, as we can't distribute the audio files with the package - you will have to create or find your own.
 
 ```bash
 docker run --rm -e OPENAI_API_KEY=SETKEYHERE -e NEWS_READER_OUTPUT_DIR=/mnt/audio -v "${PWD}:/mnt/audio" ghcr.io/troykelly/live-news-break:edge
 ```
 
-Make sure to set your correct OPENAI_API_KEY
+*Make sure to set your correct OPENAI_API_KEY*
 
 ## Prerequisites
 
@@ -53,7 +55,7 @@ pip install -r requirements.txt
 
 You will need to set several environment variables for the script to work correctly. You can set these variables in a `.env` file at the root of the repository for convenience.
 
-Here's an example configuration:
+Here's an example configuration, see the docker compose file for an exhaustive list.
 
 ```dotenv
 OPENAI_API_KEY=sk-proj-KEYKEYKEY
