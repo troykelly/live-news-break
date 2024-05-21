@@ -12,6 +12,10 @@ The `live-news-break` repository contains a news generation script that fetches,
 - [Contributing](#contributing)
 - [License](#license)
 
+## Demo
+
+<div style="height: 228px; width: 600px;"><iframe src="https://audio.com/embed/audio/1799624935123527?theme=image" style="display:block; border-radius: 6px; border: none; height: 204px; width: 600px;"></iframe><a href='https://audio.com/troy-8' style="text-align: center; display: block; color: #A4ABB6; font-size: 12px; font-family: sans-serif; line-height: 16px; margin-top: 8px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;">@troy-8</a></div>
+
 ## Prerequisites
 
 Ensure you have the following software installed on your system:
