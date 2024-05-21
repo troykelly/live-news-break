@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   news_reader:
-    image: ghcr.io/<your-github-username>/<repository-name>:latest
+    image: ghcr.io/troykelly/live-news-break:latest
     container_name: news_reader
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY?Please set OPENAI_API_KEY environment variable}
