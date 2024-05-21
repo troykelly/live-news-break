@@ -626,12 +626,15 @@ def generate_speech(news_script_chunk, api_key, voice, quality, output_format):
         str: Path to the temporary file containing the generated audio.
     """
     client = OpenAI(api_key=api_key)
+    
+    processed_text = process_text_for_tts(news_script_chunk)
+    logging.info(f"Processed text for TTS: {processed_text}")
 
     try:
         response = client.audio.speech.create(
             model=quality,
             voice=voice,
-            input=news_script_chunk,
+            input=processed_text,
             response_format=output_format
         )
 
@@ -890,7 +893,7 @@ def generate_news_audio():
 
             if sfx_file:
                 if current_index + 1 < len(script_sections):
-                    speech_text = process_text_for_tts(script_sections[current_index + 1])
+                    speech_text = script_sections[current_index + 1]
                     speech_audio_file = generate_speech(speech_text, openai_api_key, tts_voice, tts_quality, output_format)
                     mixed_audio = generate_mixed_audio(sfx_file, speech_audio_file, timing_value)
                     final_audio += mixed_audio
