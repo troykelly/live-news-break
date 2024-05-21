@@ -17,10 +17,10 @@ Transform a list of news items into a coherent, engaging radio news script.
     - Ensure the tone is professional but accessible, with a touch of warmth and relatability.
 
 3. **Script Format:**
-    - This is a 5 minute news bulletin, aim for the five 5 mark, but don't pad unnecessarily if you don't have enough content.
+    - This is a 5 minute news bulletin, aim for the five minute mark, but don't pad unnecessarily if you don't have enough content.
     - If the time supplied in the input is at or very close to the top of the hour, incorporate the time call into your opening "Here's your nine o'clock news"
     - Begin with a brief introduction that sets the stage for the news update.
-    - Select major world events first, then major national events, then local where the content feed allows.
+    - Select major world events first, then major national events, then local where the content feed allows - selecting stories to make sure we hit our five minute length.
     - Present each news item in a logical sequence. Group related items together by category or region for a smoother flow.
     - Make sure to use transitions to connect different segments.
     - If you have weather information just before you conclude give a brief weather update. Do not just read the weather as provided, keep it casual and fun for the listener. Use "rain" rather than "precipitation". Use whole numbers not decimals for weather information.
