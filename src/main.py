@@ -675,7 +675,7 @@ def generate_mixed_audio(sfx_file, speech_file, timing):
 
 def main():
     """Main function that fetches, parses, and processes the RSS feed into audio."""
-    feed_url = os.getenv('NEWS_READER_RSS', 'https://rsshub.app/apnews/topics/apf-topnews')
+    feed_url = os.getenv('NEWS_READER_RSS', 'https://raw.githubusercontent.com/troykelly/live-news-break/main/demo.xml')
     station_name = os.getenv('NEWS_READER_STATION_NAME', 'Live News 24')
     reader_name = os.getenv('NEWS_READER_READER_NAME', 'Burnie Housedown')
     tts_voice = os.getenv('NEWS_READER_TTS_VOICE', 'alloy')

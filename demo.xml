@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss xmlns:atom="http://www.w3.org/2005/Atom" version="2.0">
+        <channel>
+
+                <title>Example Feed</title>
+                <description>Example rss feed for news reader</description>
+                <link>https://github.com/troykelly/live-news-break</link>
+                <lastBuildDate>Tue, 21 May 2024 00:00:02 GMT</lastBuildDate>
+                <managingEditor>troy@troykelly.com (Troy Kelly)</managingEditor>
+
+                <item>
+                        <title>News is interesting sometimes</title>
+                        <link>https://github.com/troykelly/live-news-break</link>
+                        <guid isPermaLink="false">urn:uuid:b8cc1b76-08c5-4626-9ba6-8e9915339e0e</guid>
+                        <pubDate>Mon, 20 May 2024 00:00:02 GMT</pubDate>
+                        <description>Using science, a person has found that sometimes, news can be interesting. In a statement to the press the scientist, named Science Human, said "I'm really impressed. News has been shown to be intersting sometimes."</description>
+                </item>
+
+                <item>
+                        <title>Parents of a local teen shocked</title>
+                        <link>https://github.com/troykelly/live-news-break</link>
+                        <guid isPermaLink="false">urn:uuid:d4207b65-dbba-426d-acb0-2e26956d44eb</guid>
+                        <pubDate>Mon, 20 May 2024 00:00:02 GMT</pubDate>
+                        <description>Xanthippe and Tolare Turst have shared their shock at finding their teenage child's room adequatly cleaned before leaving the house. Xanthippe told reporters, "I've not actaully ever been confident enough to look in their room for any length of time, but I nearly passed out when I opened the door this evening." Police and paramedics were called to the address but released the scene shortly after saying, "It's not everyday we get to waste our time on a call like this".</description>
+                </item>
+
+                <item>
+                        <title>Nothing contraversial said by celebrity at event</title>
+                        <link>https://github.com/troykelly/live-news-break</link>
+                        <guid isPermaLink="false">urn:uuid:be9a5fea-3284-452d-a4d8-2c6ff2ab21b5</guid>
+                        <pubDate>Mon, 20 May 2024 00:00:02 GMT</pubDate>
+                        <description>Shocked onlookers were seen running from an event at a place yesterday after local celebrity, Zorp Narplunter was heard being polite to staff and guests during the event. Overheard by several people immediatly before the lack of commotion Mx Narplunter was seen picking up a dropped fork for a waiter and handing it to them saying "There you go, it's hard when you have a lot of things to carry."</description>
+                </item>
+
+        </channel>
+</rss>
