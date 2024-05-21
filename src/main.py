@@ -189,7 +189,10 @@ def apply_lexicon(text, lexicon):
 
     # Apply regex patterns with named groups
     for pattern, translation in lexicon.get("regex", {}).items():
-        text = re.sub(pattern, translation, text)
+        try:
+            text = re.sub(pattern, translation, text)
+        except re.error as e:
+            logging.error(f"Regex error with pattern '{pattern}': {e}")
 
     return text
 
@@ -892,14 +895,14 @@ def generate_news_audio():
 
                     if sfx_key == "OUTRO" and article_end_time is None:
                         article_end_time = total_duration
-                        logging.info(f"Music bed to start at {article_end_time}.")
+                        logging.info(f"Music bed to end at {article_end_time}.")
                         
                     if sfx_key == "FIRST" and article_start_time is None:
                         timing_offset = 0
                         if timing_value.lower() != "none":
                             timing_offset = int(timing_value)
                         article_start_time = total_duration + timing_offset
-                        logging.info(f"Music bed to end at {article_start_time}.")
+                        logging.info(f"Music bed to start at {article_start_time}.")
 
                     total_duration += len(mixed_audio)
                 else:
