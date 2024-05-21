@@ -8,6 +8,7 @@ import xml.etree.ElementTree as ET
 import html
 import requests
 import json
+import mutagen
 from openai import OpenAI
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -15,7 +16,8 @@ from pydub import AudioSegment  # Ensure you have ffmpeg installed
 from tempfile import NamedTemporaryFile
 from random import choice
 from ftplib import FTP
-
+from mutagen.easyid3 import EasyID3
+from mutagen.flac import FLAC
 
 logging.basicConfig(level=logging.INFO)
 
@@ -251,6 +253,40 @@ def wind_direction(deg):
     ]
     idx = int((deg + 11.25) / 22.5) % 16
     return directions[idx]
+
+def set_audio_metadata(file_path, metadata):
+    """
+    Sets metadata for an audio file.
+    
+    Args:
+        file_path (str): Path to the audio file.
+        metadata (dict): A dictionary of metadata to set.
+    """
+    try:
+        file_path = str(file_path)  # Convert PosixPath to string
+        
+        if file_path.endswith('.mp3'):
+            audio = EasyID3(file_path)
+        elif file_path.endswith('.flac'):
+            audio = FLAC(file_path)
+        elif file_path.endswith('.ogg'):
+            audio = mutagen.File(file_path, easy=True)
+        else:
+            logging.warning(f"File format not supported for metadata: {file_path}")
+            return
+        
+        # Set metadata
+        for key, value in metadata.items():
+            try:
+                audio[key] = value
+            except mutagen.MutagenError as e:
+                logging.warning(f"Error setting metadata key '{key}': {e}")
+        
+        # Save changes
+        audio.save()
+        logging.info(f"Metadata successfully updated for {file_path}")
+    except mutagen.MutagenError as e:
+        logging.error(f"Error opening file '{file_path}' for metadata update: {e}")
 
 def format_datetime(dt):
     """Format datetime to a full and human-readable format."""
@@ -688,6 +724,10 @@ def main():
         OUTRO_PLACEHOLDER: "OUTRO"
     }
 
+    article_start_time = None
+    article_end_time = None
+    total_duration = 0
+
     while current_index < len(script_sections):
         section = script_sections[current_index]
         if section in placeholder_to_key:
@@ -703,6 +743,19 @@ def main():
                     final_audio += mixed_audio
                     speech_audio_files.append(speech_audio_file)
                     current_index += 2
+
+                    if sfx_key == "OUTRO" and article_end_time is None:
+                        article_end_time = total_duration
+                        logging.info(f"Music bed to start at {article_end_time}.")
+                        
+                    if sfx_key == "FIRST" and article_start_time is None:
+                        timing_offset = 0
+                        if timing_value.lower() != "none":
+                            timing_offset = int(timing_value)
+                        article_start_time = total_duration + timing_offset
+                        logging.info(f"Music bed to end at {article_start_time}.")
+
+                    total_duration += len(mixed_audio)
                 else:
                     raise ValueError("SFX placeholder found at the end without subsequent text.")
             else:
@@ -710,11 +763,59 @@ def main():
                 current_index += 1
         else:
             speech_audio_file = generate_speech(section, openai_api_key, tts_voice, tts_quality, output_format)
-            final_audio += AudioSegment.from_file(speech_audio_file)
+            speech_audio = AudioSegment.from_file(speech_audio_file)
+            final_audio += speech_audio
             speech_audio_files.append(speech_audio_file)
             current_index += 1
 
+            if article_start_time is None:
+                article_start_time = total_duration
+
+            total_duration += len(speech_audio)
+            article_end_time = total_duration
+
+    # Post-process to add music bed
+    bed_file = audio_files.get("BED", None)
+    if bed_file and article_start_time is not None and article_end_time is not None:
+        bed_audio = AudioSegment.from_file(bed_file)
+        # Ensure fade values are converted to integers and have default fallback values if not set
+        bed_gain = float(os.getenv(GAIN_ENV["BED"], -15))
+        bed_fadein = int(os.getenv(FADEIN_ENV["BED"], 0) or 0)
+        bed_fadeout = int(os.getenv(FADEOUT_ENV["BED"], 500) or 500)
+        bed_offset = int(os.getenv(TIMINGS_ENV["BED"], 0) or 0)
+
+        # Adjust the start time of the bed audio in case of a negative offset
+        adjusted_article_start_time = max(0, article_start_time + bed_offset)
+        if article_start_time is not None and article_end_time is not None:
+            bed_duration = article_end_time - article_start_time
+            looped_bed_audio = AudioSegment.empty()
+
+            while len(looped_bed_audio) < bed_duration:
+                looped_bed_audio += bed_audio
+
+            looped_bed_audio = looped_bed_audio[:bed_duration]
+            looped_bed_audio = looped_bed_audio.apply_gain(bed_gain)
+
+            if bed_fadein > 0:
+                looped_bed_audio = looped_bed_audio.fade_in(bed_fadein)
+            if bed_fadeout > 0:
+                looped_bed_audio = looped_bed_audio.fade_out(bed_fadeout)
+            # Overlay the bed audio starting from the adjusted article start time
+            combined_audio = final_audio.overlay(looped_bed_audio, position=adjusted_article_start_time)
+            final_audio = combined_audio
+
     final_audio.export(output_file_path, format=output_format)
+    
+    # Set metadata for the generated audio file
+    metadata = {
+        'title': f"{station_name} News Broadcast - {current_time}",
+        'artist': f"{reader_name}",
+        'album': 'News Bulletin',
+        'date': datetime.now().strftime('%Y-%m-%d'),
+        'genre': 'News',
+        'lyrics': news_script
+    }
+    set_audio_metadata(output_file_path, metadata)    
     logging.info(f"News audio generated and saved to {output_file_path}")
 
 if __name__ == '__main__':
