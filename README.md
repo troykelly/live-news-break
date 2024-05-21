@@ -12,6 +12,10 @@ The `live-news-break` repository contains a news generation script that fetches,
 - [Contributing](#contributing)
 - [License](#license)
 
+## Demo
+
+Listen to the demo here: [https://audio.com/troy-8/audio/troykelly-live-news-break-demo-reel-1](https://audio.com/troy-8/audio/troykelly-live-news-break-demo-reel-1)
+
 ## Prerequisites
 
 Ensure you have the following software installed on your system:
