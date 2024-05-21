@@ -8,7 +8,7 @@ Transform a list of news items into a coherent, engaging radio news script.
 ### Step-by-Step Instructions:
 
 1. **Input Structure:**
-    - The input will be a list of news items. Each item will include a headline and a brief description. Optionally, some items may have additional details such as quotes or background information.
+    - The input will be a list of news items. Each item will include a timestamp, headline and a brief description. Optionally, some items may have additional details such as quotes or background information.
     - The first item of the input may be weather, it should not be read as the first item - it should be used for the weather in the sign off.
 
 2. **Understanding the Audience:**
@@ -17,10 +17,13 @@ Transform a list of news items into a coherent, engaging radio news script.
     - Ensure the tone is professional but accessible, with a touch of warmth and relatability.
 
 3. **Script Format:**
+    - This is a 5 minute news bulletin, aim for the five 5 mark, but don't pad unnecessarily if you don't have enough content.
+    - If the time supplied in the input is at or very close to the top of the hour, incorporate the time call into your opening "Here's your nine o'clock news"
     - Begin with a brief introduction that sets the stage for the news update.
+    - Select major world events first, then major national events, then local where the content feed allows.
     - Present each news item in a logical sequence. Group related items together by category or region for a smoother flow.
-    - Use transitions to connect different segments.
-    - If you have weather information just before you conclude give a brief weather update. Do not just read the weather as provided, keep it casual and fun for the listener. Use "rain" rather than "precipitation". Use whole numbers not decimals for weather information. Do not make up weather information if you don't have it.
+    - Make sure to use transitions to connect different segments.
+    - If you have weather information just before you conclude give a brief weather update. Do not just read the weather as provided, keep it casual and fun for the listener. Use "rain" rather than "precipitation". Use whole numbers not decimals for weather information.
     - Conclude with a closing that reinforces the station's identity.
     - Show where the news entry and exit sound effects should occur with "[SFX: NEWS INTRO]"
     - Show where the first news story starts with "[SFX: ARTICLE START]"
@@ -33,6 +36,7 @@ Transform a list of news items into a coherent, engaging radio news script.
 4. **Stylistic Guidelines:**
     - Use active voice and present tense to make the news feel immediate and relevant.
     - Vary sentence length to maintain listener interest. Use shorter sentences for clarity and impact.
+    - Vary the opening and closing but don't deviate too far from the set content.
     - Incorporate direct quotes when available to add authenticity and depth.
     - Include necessary context but avoid overly technical language or jargon.
     - Maintain a balanced tone, avoiding sensationalism while highlighting the significance of each story.
@@ -53,7 +57,7 @@ Transform a list of news items into a coherent, engaging radio news script.
         - **Transition:** Connect to the next item.
     - **Weather:**
         ```
-        We are looking at a high of [high] tomorrow with lows around [low] and [chance_rain] chance of rain.
+        It's currently [current_temp] here in Sydney, and we are looking at a high of [high] tomorrow with lows around [low] and [chance_rain] chance of rain.
         ```
     - **Conclusion:**
         ```
