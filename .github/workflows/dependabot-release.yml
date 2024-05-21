@@ -1,0 +1,72 @@
+name: Approve Dependabot PRs and Create Release
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - reopened
+      - synchronize
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: write
+
+jobs:
+  approve-dependabot-pr:
+    if: ${{ github.event_name == 'pull_request_target' && (github.actor == 'dependabot[bot]' || github.actor == 'dependabot-preview[bot]') }}
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+    
+    - name: Approve Dependabot PR
+      run: |
+        gh pr review ${{ github.event.pull_request.number }} --approve
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  create-release:
+    needs: approve-dependabot-pr
+    if: ${{ github.event_name == 'pull_request_target' && (github.actor == 'dependabot[bot]' || github.actor == 'dependabot-preview[bot]') }}
+    runs-on: ubuntu-latest
+    
+    outputs:
+      new_version: ${{ steps.get_latest_version.outputs.new_version }}
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: Get the latest release version
+      id: get_latest_version
+      run: |
+        latest_release=$(gh release view --json tagName --jq .tagName || echo "v0.0.0")
+        echo "Latest release version: $latest_release"
+        IFS='.' read -r major minor patch <<< "${latest_release#v}"
+        new_patch=$((patch+1))
+        new_version="v${major}.${minor}.${new_patch}"
+        echo "New version: $new_version"
+        echo "::set-output name=new_version::$new_version"
+      
+    - name: Create draft release
+      id: create_release
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        gh release create ${{ steps.get_latest_version.outputs.new_version }} -d -t "Release ${{ steps.get_latest_version.outputs.new_version }}" -n "Automated release by GitHub Actions"
+
+  approve-release:
+    needs: create-release
+    if: ${{ github.event_name == 'pull_request_target' && (github.actor == 'dependabot[bot]' || github.actor == 'dependabot-preview[bot]') }}
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Publish draft release
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        gh release edit ${{ needs.create-release.outputs.new_version }} --draft=false
