@@ -1,0 +1,14 @@
+{
+    "direct": {
+        "abc": "a b c",
+        "123": "one two three",
+        "NSW": "New South Wales",
+        "Anthony Albanese": "Anthony /ɑɫbɑˈneɪzi/"
+    },
+    "regex": {
+        "(?P<number>\\d+\\.?\\d*)°C": "\\g<number> degrees Celsius",
+        "(?P<number>\\d+\\.?\\d*)°F": "\\g<number> degrees Fahrenheit",
+        "-\\s?(?P<number>\\d+\\.?\\d*)°C": "negative \\g<number> degrees Celsius",
+        "-\\s?(?P<number>\\d+\\.?\\d*)°F": "negative \\g<number> degrees Fahrenheit"
+    }
+}

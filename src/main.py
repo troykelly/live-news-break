@@ -69,6 +69,9 @@ FADEOUT_ENV = {
     'BED': 'NEWS_READER_FADEOUT_BED'
 }
 
+# Lexicon data
+LEXICON_JSON_PATH = os.getenv('NEWS_READER_LEXICON_JSON', './lexicon.json')
+
 # Weather Data
 WEATHER_JSON_PATH = os.getenv('NEWS_READER_WEATHER_JSON', './weather.json')
 
@@ -93,6 +96,56 @@ FEED_CONFIG = {
         r'News Bulletin \d+ \w+ \d{4}'
     ]
 }
+
+def load_lexicon(file_path):
+    """Load lexicon dictionary from a JSON file.
+
+    Args:
+        file_path (str): Path to the JSON file containing the lexicon.
+
+    Returns:
+        dict: Dictionary containing the lexicon for translation/conversion.
+    """
+    try:
+        with open(file_path, 'r', encoding='utf-8') as file:
+            lexicon = json.load(file)
+        return lexicon
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        logging.error(f"Error loading lexicon file '{file_path}': {e}")
+        return {}
+
+def apply_lexicon(text, lexicon):
+    """Apply lexicon translations to the given text.
+
+    Args:
+        text (str): The original text to be converted.
+        lexicon (dict): Dictionary containing the lexicon for translation/conversion.
+
+    Returns:
+        str: The text after applying lexicon conversions.
+    """
+    # Apply direct text to translation mappings
+    for original, translation in lexicon.get("direct", {}).items():
+        text = text.replace(original, translation)
+
+    # Apply regex patterns with named groups
+    for pattern, translation in lexicon.get("regex", {}).items():
+        text = re.sub(pattern, translation, text)
+
+    return text
+
+# Example usage within the existing script
+def process_text_for_tts(text):
+    """Process text using the lexicon before sending to TTS engine.
+
+    Args:
+        text (str): The original text to be processed.
+    
+    Returns:
+        str: The processed text.
+    """
+    lexicon = load_lexicon(LEXICON_JSON_PATH)
+    return apply_lexicon(text, lexicon)
 
 def parse_rss_feed(feed_url, config):
     """Parses the RSS feed, filtering out ignored articles using regex patterns.
@@ -737,7 +790,7 @@ def main():
 
             if sfx_file:
                 if current_index + 1 < len(script_sections):
-                    speech_text = script_sections[current_index + 1]
+                    speech_text = process_text_for_tts(script_sections[current_index + 1])
                     speech_audio_file = generate_speech(speech_text, openai_api_key, tts_voice, tts_quality, output_format)
                     mixed_audio = generate_mixed_audio(sfx_file, speech_audio_file, timing_value)
                     final_audio += mixed_audio
