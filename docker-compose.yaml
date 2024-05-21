@@ -1,9 +1,7 @@
-version: '3.8'
 
 services:
   news_reader:
     image: ghcr.io/troykelly/live-news-break:latest
-    container_name: news_reader
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY?Please set OPENAI_API_KEY environment variable}
       - OPENWEATHER_API_KEY=${OPENWEATHER_API_KEY}
@@ -52,6 +50,7 @@ services:
       - NEWS_READER_PROMPT_FILE=${NEWS_READER_PROMPT_FILE}
       - NEWS_READER_OUTPUT_DIR=${NEWS_READER_OUTPUT_DIR}
       - NEWS_READER_OUTPUT_FILE=${NEWS_READER_OUTPUT_FILE}
+      - NEWS_READER_OUTPUT_LINK=${NEWS_READER_OUTPUT_LINK}
 
     volumes:
       - ./audio:/app/audio

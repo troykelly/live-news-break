@@ -9,6 +9,7 @@ import html
 import requests
 import json
 import mutagen
+import time
 from openai import OpenAI
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -18,6 +19,7 @@ from random import choice
 from ftplib import FTP
 from mutagen.easyid3 import EasyID3
 from mutagen.flac import FLAC
+from croniter import croniter
 
 logging.basicConfig(level=logging.INFO)
 
@@ -91,11 +93,39 @@ FEED_CONFIG = {
     'TITLE': 'title',
     'DESCRIPTION': 'description',
     'CATEGORY': 'category',
+    'PUBLISHED': 'pubDate',
     'IGNORE_PATTERNS': [
         r'SBS News in Easy English \d+ \w+ \d{4}',
         r'News Bulletin \d+ \w+ \d{4}'
     ]
 }
+
+def validate_cron(cron_expr):
+    """Validate the cron expression."""
+    try:
+        croniter(cron_expr)
+        return True
+    except:
+        return False
+
+def check_and_create_link_path(link_path):
+    """Check if the symbolic link path is writable and create the directory if it doesn't exist."""
+    link_path = Path(link_path)
+    directory = link_path.parent
+    if not directory.exists():
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+            logging.info(f"Created directory for link path: {directory}")
+        except Exception as e:
+            logging.error(f"Failed to create directory for link path '{directory}': {e}")
+            return False
+
+    # Check if we can write to the directory
+    if not os.access(directory, os.W_OK):
+        logging.error(f"Cannot write to the directory '{directory}' for link path.")
+        return False
+
+    return True
 
 def load_lexicon(file_path):
     """Load lexicon dictionary from a JSON file.
@@ -164,12 +194,25 @@ def parse_rss_feed(feed_url, config):
         logging.info(f"Processing entry: {entry.title}")
         if any(re.search(pattern, entry.title) for pattern in config['IGNORE_PATTERNS']):
             continue
-        
+
         categories = [clean_text(cat['term']) for cat in entry.get('tags', [])]
         item = {config_field: clean_text(entry.get(feed_field, ''))
                 for config_field, feed_field in config.items()
                 if config_field not in ['IGNORE_PATTERNS', 'CATEGORY']}
         item['CATEGORY'] = ', '.join(categories) if categories else 'General'
+        
+        # Ensure we correctly parse the published date
+        if hasattr(entry, 'published_parsed'):
+            published_date = datetime(*entry.published_parsed[:6])
+        elif 'published' in entry:
+            try:
+                published_date = datetime.strptime(entry.published, '%a, %d %b %Y %H:%M:%S %Z')
+            except ValueError:
+                published_date = 'Unknown'
+        else:
+            published_date = 'Unknown'
+        
+        item['PUBLISHED'] = published_date
         
         parsed_items.append(item)
 
@@ -473,7 +516,20 @@ def generate_news_script(news_items, prompt_instructions, station_name, reader_n
         if title in seen_titles:
             continue
 
-        new_entry = f"{index + 1}. **Headline:** {title}\n   **Category:** {item.get('CATEGORY', 'General')}\n   **Description:** {item['DESCRIPTION']}\n\n"
+        # Include published date if available
+        published_date = item.get('PUBLISHED', None)
+        if published_date and published_date != 'Unknown':
+            published_date = published_date.strftime('%A, %B %d, %Y at %I:%M %p %Z')
+            date_line = f"   **Published on:** {published_date}\n"
+        else:
+            date_line = ""
+
+        new_entry = (
+            f"{index + 1}. **Headline:** {title}\n"
+            f"   **Category:** {item.get('CATEGORY', 'General')}\n"
+            f"{date_line}"
+            f"   **Description:** {item['DESCRIPTION']}\n\n"
+        )
         new_entry_length = len(new_entry.split())
 
         if prompt_length + news_length + new_entry_length > max_tokens:
@@ -492,7 +548,7 @@ def generate_news_script(news_items, prompt_instructions, station_name, reader_n
         )
 
     user_prompt = combined_prompt + news_content
-    
+
     logging.info(f"User prompt: {user_prompt}")
 
     try:
@@ -673,8 +729,8 @@ def generate_mixed_audio(sfx_file, speech_file, timing):
 
     return combined_audio
 
-def main():
-    """Main function that fetches, parses, and processes the RSS feed into audio."""
+def generate_news_audio():
+    """Function to handle the news generation and audio output."""
     feed_url = os.getenv('NEWS_READER_RSS', 'https://raw.githubusercontent.com/troykelly/live-news-break/main/demo.xml')
     station_name = os.getenv('NEWS_READER_STATION_NAME', 'Live News 24')
     reader_name = os.getenv('NEWS_READER_READER_NAME', 'Burnie Housedown')
@@ -701,7 +757,11 @@ def main():
         logging.error(f"Invalid timezone '{timezone_str}', defaulting to UTC")
         timezone = pytz.UTC
 
-    current_time = datetime.now(timezone).strftime('%Y-%m-%d %H:%M:%S %Z')
+    # Handle timeshift
+    timeshift_millis = int(os.getenv('NEWS_READER_TIMESHIFT', '0'))
+    timeshift_delta = timedelta(milliseconds=timeshift_millis)
+
+    current_time = datetime.now(timezone) + timeshift_delta
 
     news_items = parse_rss_feed(feed_url, FEED_CONFIG)
 
@@ -858,7 +918,7 @@ def main():
             final_audio = combined_audio
 
     final_audio.export(output_file_path, format=output_format)
-    
+
     # Set metadata for the generated audio file
     metadata = {
         'title': f"{station_name} News Broadcast - {current_time}",
@@ -868,8 +928,52 @@ def main():
         'genre': 'News',
         'lyrics': news_script
     }
-    set_audio_metadata(output_file_path, metadata)    
+    set_audio_metadata(output_file_path, metadata)
     logging.info(f"News audio generated and saved to {output_file_path}")
+
+    # Handle the NEWS_READER_OUTPUT_LINK environment variable
+    output_link = os.getenv('NEWS_READER_OUTPUT_LINK', '').strip()
+
+    if output_link:
+        if check_and_create_link_path(output_link):
+            try:
+                if os.path.exists(output_link):
+                    os.remove(output_link)
+                os.symlink(output_file_path, output_link)
+                logging.info(f"Created symbolic link '{output_link}' -> '{output_file_path}'")
+            except Exception as e:
+                logging.error(f"Failed to create symbolic link '{output_link}' to '{output_file_path}': {e}")
+        else:
+            logging.error(f"Failed checks for symbolic link creation: {output_link}")
+
+def main():
+    """Main function that fetches, parses, and processes the RSS feed into audio."""
+    cron_exp = os.getenv('NEWS_READER_CRON', '').strip()
+
+    if cron_exp:
+        if not validate_cron(cron_exp):
+            logging.error(f"Invalid cron expression '{cron_exp}' in 'NEWS_READER_CRON' environment variable.")
+            return
+
+        while True:
+            try:
+                iterator = croniter(cron_exp, datetime.now())
+                next_run = iterator.get_next(datetime)
+                current_time = datetime.now()
+                sleep_duration = (next_run - current_time).total_seconds()
+
+                logging.info(f"Scheduled next run at: {next_run} (sleeping for {sleep_duration} seconds)")
+                time.sleep(sleep_duration)
+
+                generate_news_audio()
+            except Exception as e:
+                logging.error(f"An error occurred during scheduled news generation: {e}")
+
+    else:
+        try:
+            generate_news_audio()
+        except Exception as e:
+            logging.error(f"An error occurred during news generation: {e}")
 
 if __name__ == '__main__':
     main()
