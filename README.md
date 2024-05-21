@@ -87,6 +87,253 @@ OPENWEATHER_LON=151.2093
 
 Ensure to replace placeholder values, especially the `OPENAI_API_KEY` and `OPENWEATHER_API_KEY`, with your actual API keys.
 
+## Environment Variables Explainer
+
+This document provides an overview and explanation of the environment variables used in the News Reader application. Each variable's purpose, default value (if applicable), and example usage are provided below.
+
+### General Configuration
+
+#### `OPENAI_API_KEY`
+- **Description:** API key for OpenAI, used for generating news scripts via the GPT model.
+- **Example:** `sk-abc123`
+
+#### `NEWS_READER_CRON`
+- **Description:** Cron expression to schedule the news generation. If not set, the script runs once.
+- **Default:** N/A
+- **Example:** `13,28,43,58 * * * *` (fires two minutes before every quarter hour)
+
+#### `NEWS_READER_RSS`
+- **Description:** URL of the RSS feed to parse.
+- **Default:** `https://raw.githubusercontent.com/troykelly/live-news-break/main/demo.xml`
+- **Example:** `https://example.com/rss-feed`
+
+#### `NEWS_READER_OUTPUT_DIR`
+- **Description:** Directory where the generated audio files are saved.
+- **Default:** `.`
+- **Example:** `/output`
+
+#### `NEWS_READER_OUTPUT_FILE`
+- **Description:** File name template for the output audio file. Supports placeholders: `%Y%`, `%m%`, `%d%`, `%H%`, `%M%`, `%S%`, `%EXT%`.
+- **Default:** `livenews.%EXT%`
+- **Example:** `news_%Y%_%m%_%d%_%H%_%M%_%S%.mp3`
+
+#### `NEWS_READER_OUTPUT_LINK`
+- **Description:** Path to create a symbolic link pointing to the latest output file. If not set, no symbolic link is created.
+- **Example:** `/path/to/latest_news.mp3`
+
+### Station Configuration
+
+#### `NEWS_READER_STATION_NAME`
+- **Description:** Name of the radio station.
+- **Default:** `Live News 24`
+- **Example:** `News Update Radio`
+
+#### `NEWS_READER_READER_NAME`
+- **Description:** Name of the news reader.
+- **Default:** `Burnie Housedown`
+- **Example:** `OpenAI Shimmer`
+
+#### `NEWS_READER_STATION_CITY`
+- **Description:** City where the station is located.
+- **Default:** `Sydney`
+- **Example:** `Melbourne`
+
+#### `NEWS_READER_STATION_COUNTRY`
+- **Description:** Country where the station is located.
+- **Default:** `Australia`
+- **Example:** `United States`
+
+### Audio Configuration
+
+#### `NEWS_READER_TTS_VOICE`
+- **Description:** Voice to be used by the text-to-speech service.
+- **Default:** `alloy`
+- **Example:** `shimmer`
+
+#### `NEWS_READER_TTS_QUALITY`
+- **Description:** Quality settings for the TTS.
+- **Default:** `tts-1`
+- **Example:** `tts-1-hd`
+
+#### `NEWS_READER_OUTPUT_FORMAT`
+- **Description:** Format for the output audio file.
+- **Default:** `flac`
+- **Example:** `mp3`
+
+#### Audio Files
+
+##### Required Audio Files
+
+- `NEWS_READER_AUDIO_INTRO`: Path to the introduction audio file.
+  - **Example:** `audio/intro.wav`
+- `NEWS_READER_AUDIO_OUTRO`: Path to the outro audio file.
+  - **Example:** `audio/outro.wav`
+- `NEWS_READER_AUDIO_FIRST`: Path to the first news article audio file.
+  - **Example:** `audio/first.wav`
+- `NEWS_READER_AUDIO_BREAK`: Path to the break between articles audio file.
+  - **Example:** `audio/break.wav`
+- `NEWS_READER_AUDIO_BED`: Path to the bed music file.
+  - **Example:** `audio/bed.wav`
+
+##### Timing Configuration
+
+- `NEWS_READER_TIMING_INTRO`: Timing offset for introduction.
+  - **Default:** `None`
+  - **Example:** `16500`
+- `NEWS_READER_TIMING_OUTRO`: Timing offset for outro.
+  - **Default:** `None`
+  - **Example:** `8500`
+- `NEWS_READER_TIMING_BREAK`: Timing offset for break.
+  - **Default:** `None`
+  - **Example:** `1600`
+- `NEWS_READER_TIMING_FIRST`: Timing offset for the first article.
+  - **Default:** `None`
+  - **Example:** `3300`
+- `NEWS_READER_TIMING_BED`: Timing offset for bed music.
+  - **Default:** `None`
+  - **Example:** `-500`
+
+##### Gain Configuration
+
+- `NEWS_READER_GAIN_VOICE`: Gain for voice audio.
+  - **Default:** `None`
+  - **Example:** `-3`
+- `NEWS_READER_GAIN_INTRO`: Gain for introduction audio.
+  - **Default:** `None`
+  - **Example:** `-6`
+- `NEWS_READER_GAIN_OUTRO`: Gain for outro audio.
+  - **Default:** `None`
+  - **Example:** `-6`
+- `NEWS_READER_GAIN_BREAK`: Gain for break audio.
+  - **Default:** `None`
+  - **Example:** `-6`
+- `NEWS_READER_GAIN_FIRST`: Gain for the first article audio.
+  - **Default:** `None`
+  - **Example:** `-6`
+- `NEWS_READER_GAIN_BED`: Gain for bed music audio.
+  - **Default:** `None`
+  - **Example:** `-15`
+
+##### Fade Configuration
+
+- `NEWS_READER_FADEIN_INTRO`: Fade-in duration for introduction.
+  - **Default:** `None`
+  - **Example:** `1000`
+- `NEWS_READER_FADEIN_OUTRO`: Fade-in duration for outro.
+  - **Default:** `None`
+  - **Example:** `1000`
+- `NEWS_READER_FADEIN_BREAK`: Fade-in duration for break.
+  - **Default:** `None`
+  - **Example:** `1000`
+- `NEWS_READER_FADEIN_FIRST`: Fade-in duration for the first article.
+  - **Default:** `None`
+  - **Example:** `1000`
+- `NEWS_READER_FADEIN_BED`: Fade-in duration for bed music.
+  - **Default:** `None`
+  - **Example:** `0`
+
+- `NEWS_READER_FADEOUT_INTRO`: Fade-out duration for introduction.
+  - **Default:** `None`
+  - **Example:** `1000`
+- `NEWS_READER_FADEOUT_OUTRO`: Fade-out duration for outro.
+  - **Default:** `None`
+  - **Example:** `1000`
+- `NEWS_READER_FADEOUT_BREAK`: Fade-out duration for break.
+  - **Default:** `None`
+  - **Example:** `1000`
+- `NEWS_READER_FADEOUT_FIRST`: Fade-out duration for the first article.
+  - **Default:** `None`
+  - **Example:** `1000`
+- `NEWS_READER_FADEOUT_BED`: Fade-out duration for bed music.
+  - **Default:** `None`
+  - **Example:** `500`
+
+### Lexicon Configuration
+
+#### `NEWS_READER_LEXICON_JSON`
+- **Description:** Path to the lexicon JSON file for text conversion.
+- **Default:** `./lexicon.json`
+- **Example:** `/path/to/lexicon.json`
+
+### Weather Data Configuration
+
+#### `NEWS_READER_WEATHER_JSON`
+- **Description:** Path to the weather data JSON file.
+- **Default:** `./weather.json`
+- **Example:** `/path/to/weather.json`
+
+#### Bureau of Meteorology (BOM) Configuration
+
+- `NEWS_READER_BOM_PRODUCT_ID`: BOM product ID for weather data.
+  - **Default:** `IDN10064`
+  - **Example:** `IDN10064`
+
+#### OpenWeather Configuration
+
+- `OPENWEATHER_API_KEY`: API key for OpenWeatherMap.
+  - **Example:** `abc123`
+- `OPENWEATHER_LAT`: Latitude for the weather location.
+  - **Example:** `-33.8688`
+- `OPENWEATHER_LON`: Longitude for the weather location.
+  - **Example:** `151.2093`
+- `OPENWEATHER_UNITS`: Units for weather data (standard, metric, imperial).
+  - **Default:** `metric`
+  - **Example:** `metric`
+
+### Example Environment Configuration
+
+Here's an example environment configuration you can use in your Docker Compose file or `.env` file:
+
+```text
+OPENAI_API_KEY=sk-abc123
+NEWS_READER_CRON=13,28,43,58 * * * *
+NEWS_READER_RSS=https://example.com/rss-feed
+NEWS_READER_OUTPUT_DIR=/output
+NEWS_READER_OUTPUT_FILE=news_%Y%_%m%_%d%_%H%_%M%_%S%.mp3
+NEWS_READER_OUTPUT_LINK=/path/to/latest_news.mp3
+NEWS_READER_STATION_NAME='News Update Radio'
+NEWS_READER_READER_NAME='OpenAI Shimmer'
+NEWS_READER_STATION_CITY=Sydney
+NEWS_READER_STATION_COUNTRY=Australia
+NEWS_READER_TTS_VOICE=shimmer
+NEWS_READER_TTS_QUALITY=tts-1-hd
+NEWS_READER_OUTPUT_FORMAT=mp3
+NEWS_READER_AUDIO_INTRO=audio/intro.wav
+NEWS_READER_AUDIO_OUTRO=audio/outro.wav
+NEWS_READER_AUDIO_FIRST=audio/first.wav
+NEWS_READER_AUDIO_BREAK=audio/break.wav
+NEWS_READER_AUDIO_BED=audio/bed.wav
+NEWS_READER_TIMING_INTRO=16500
+NEWS_READER_TIMING_OUTRO=8500
+NEWS_READER_TIMING_BREAK=1600
+NEWS_READER_TIMING_FIRST=3300
+NEWS_READER_TIMING_BED=-500
+NEWS_READER_GAIN_VOICE=-3
+NEWS_READER_GAIN_INTRO=-6
+NEWS_READER_GAIN_OUTRO=-6
+NEWS_READER_GAIN_BREAK=-6
+NEWS_READER_GAIN_FIRST=-6
+NEWS_READER_GAIN_BED=-15
+NEWS_READER_FADEIN_INTRO=1000
+NEWS_READER_FADEOUT_INTRO=1000
+NEWS_READER_FADEIN_OUTRO=1000
+NEWS_READER_FADEOUT_OUTRO=1000
+NEWS_READER_FADEIN_BREAK=1000
+NEWS_READER_FADEOUT_BREAK=1000
+NEWS_READER_FADEIN_FIRST=1000
+NEWS_READER_FADEOUT_FIRST=1000
+NEWS_READER_FADEIN_BED=0
+NEWS_READER_FADEOUT_BED=500
+NEWS_READER_LEXICON_JSON=/path/to/lexicon.json
+NEWS_READER_WEATHER_JSON=/path/to/weather.json
+NEWS_READER_BOM_PRODUCT_ID=IDN10064
+OPENWEATHER_API_KEY=abc123
+OPENWEATHER_LAT=-33.8688
+OPENWEATHER_LON=151.2093
+OPENWEATHER_UNITS=metric
+NEWS_READER_TIMEZONE=Australia/Sydney
+```
+
 ## Running the Script
 
 After configuring your environment variables, you can run the script using:
