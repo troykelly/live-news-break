@@ -42,7 +42,7 @@ jobs:
       id: version
       run: |
         echo "Extracting version from release tag"
-        version=$(echo "${{ github.event.release.tag_name }}" | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+$')
+        version=$(echo "${{ github.event.release.tag_name }}" | grep -oE '^v?[0-9]+\.[0-9]+\.[0-9]+$' | tr -d 'v')
         
         if [ -z "$version" ]; then
           echo "Could not extract version from tag: ${{ github.event.release.tag_name }}"
