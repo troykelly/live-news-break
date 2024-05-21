@@ -30,14 +30,41 @@ AUDIO_FILES_ENV = {
     'INTRO': 'NEWS_READER_AUDIO_INTRO',
     'OUTRO': 'NEWS_READER_AUDIO_OUTRO',
     'BREAK': 'NEWS_READER_AUDIO_BREAK',
-    'FIRST': 'NEWS_READER_AUDIO_FIRST'
+    'FIRST': 'NEWS_READER_AUDIO_FIRST',
+    'BED': 'NEWS_READER_AUDIO_BED'
 }
 
 TIMINGS_ENV = {
     'INTRO': 'NEWS_READER_TIMING_INTRO',
     'OUTRO': 'NEWS_READER_TIMING_OUTRO',
     'BREAK': 'NEWS_READER_TIMING_BREAK',
-    'FIRST': 'NEWS_READER_TIMING_FIRST'
+    'FIRST': 'NEWS_READER_TIMING_FIRST',
+    'BED': 'NEWS_READER_TIMING_BED'
+}
+
+GAIN_ENV = {
+    'VOICE': 'NEWS_READER_GAIN_VOICE',
+    'INTRO': 'NEWS_READER_GAIN_INTRO',
+    'OUTRO': 'NEWS_READER_GAIN_OUTRO',
+    'BREAK': 'NEWS_READER_GAIN_BREAK',
+    'FIRST': 'NEWS_READER_GAIN_FIRST',
+    'BED': 'NEWS_READER_GAIN_BED'
+}
+
+FADEIN_ENV = {
+    'INTRO': 'NEWS_READER_FADEIN_INTRO',
+    'OUTRO': 'NEWS_READER_FADEIN_OUTRO',
+    'BREAK': 'NEWS_READER_FADEIN_BREAK',
+    'FIRST': 'NEWS_READER_FADEIN_FIRST',
+    'BED': 'NEWS_READER_FADEIN_BED'
+}
+
+FADEOUT_ENV = {
+    'INTRO': 'NEWS_READER_FADEOUT_INTRO',
+    'OUTRO': 'NEWS_READER_FADEOUT_OUTRO',
+    'BREAK': 'NEWS_READER_FADEOUT_BREAK',
+    'FIRST': 'NEWS_READER_FADEOUT_FIRST',
+    'BED': 'NEWS_READER_FADEOUT_BED'
 }
 
 # Weather Data
@@ -299,10 +326,11 @@ def generate_openweather_weather_report(data, units='metric'):
     return full_report
 
 def clean_text(input_string):
-    """Remove HTML tags and non-human-readable content from the text."""
+    """Remove HTML tags, non-human-readable content, and excess whitespace from the text."""
     cleanr = re.compile('<.*?>')
     cleantext = re.sub(cleanr, '', html.unescape(input_string))
-    return cleantext.strip()
+    cleaned_whitespace = re.sub(r'\s+', ' ', cleantext)
+    return cleaned_whitespace.strip()
 
 def get_timing_value(env_key, default="None"):
     """Retrieve the timing value from the environment.
@@ -348,9 +376,15 @@ def generate_news_script(news_items, prompt_instructions, station_name, reader_n
     combined_prompt = time_ident + station_ident + "\n\n"
     news_content = ""
     news_length = 0
+    seen_titles = set()
 
     for index, item in enumerate(news_items):
-        new_entry = f"{index + 1}. **Headline:** {item['TITLE']}\n   **Category:** {item.get('CATEGORY', 'General')}\n   **Description:** {item['DESCRIPTION']}\n\n"
+        title = item['TITLE']
+        # Skip the item if the title has already been seen
+        if title in seen_titles:
+            continue
+
+        new_entry = f"{index + 1}. **Headline:** {title}\n   **Category:** {item.get('CATEGORY', 'General')}\n   **Description:** {item['DESCRIPTION']}\n\n"
         new_entry_length = len(new_entry.split())
 
         if prompt_length + news_length + new_entry_length > max_tokens:
@@ -358,6 +392,7 @@ def generate_news_script(news_items, prompt_instructions, station_name, reader_n
 
         news_content += new_entry
         news_length += new_entry_length
+        seen_titles.add(title)  # Mark the title as seen
 
     if not news_content:
         logging.info(f"News Content: {news_content}")
@@ -593,7 +628,7 @@ def main():
     openweather_units = os.getenv('OPENWEATHER_UNITS', 'metric')  # default to metric if not set
 
     if openweather_api_key and openweather_lat and openweather_lon:
-        weather_data = fetch_openweather_data(openweather_api_key, openweather_lat, openweather_lon, openweather_units)
+        weather_data = fetch_openweather_data(openweather_api_key, openweather_lat, openweather_lon, openweather_units, WEATHER_JSON_PATH)
         if weather_data:
             weather_info = generate_openweather_weather_report(weather_data, openweather_units)
     else:

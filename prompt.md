@@ -27,6 +27,7 @@ Transform a list of news items into a coherent, engaging radio news script.
     - Show where story break sound effects should occur "[SFX: ARTICLE BREAK]"
     - After the last story have "[SFX: NEWS OUTRO]" immediatly before the conclusion copy.
     - Do not have an artical break SFX after the last article. Just denote the news outro.
+    - Do not modify the naming of the SFX events.
     - No other script notes are needed (ie, don't highlight the news reader on each article)
 
 4. **Stylistic Guidelines:**
