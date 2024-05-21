@@ -1,139 +1,111 @@
+# live-news-break
 
-# Live News Break Generator
-
-## Overview
-
-The Live News Break Generator is a tool designed to fetch news articles from an RSS feed, integrate weather data from the Bureau of Meteorology (BOM), generate a news script, and produce audio news segments using text-to-speech (TTS) technology. This tool can be used by radio stations, podcasts, or any service requiring automated news updates.
+The `live-news-break` repository contains a news generation script that fetches, processes, and converts news articles into an audio news broadcast. This guide will help you understand how to set up, configure, and run the news generation process using the script provided.
 
 ## Table of Contents
 
-- [Features](#features)
 - [Prerequisites](#prerequisites)
-- [Installation](#installation)
+- [Setup](#setup)
 - [Configuration](#configuration)
-- [Usage](#usage)
+- [Running the Script](#running-the-script)
+- [Script Overview](#script-overview)
+- [Contributing](#contributing)
 - [License](#license)
-
-## Features
-
-- Fetch news articles from any specified RSS feed.
-- Integrate live weather data from the BOM.
-- Generate coherent and engaging news scripts formatted for radio broadcasting.
-- Convert news scripts into audio files with TTS.
-- Concatenate custom sound effects (intros, breaks, outros) with the generated speech.
 
 ## Prerequisites
 
-Before you begin, ensure you have met the following requirements:
+Ensure you have the following software installed on your system:
 
-- Python 3.8 or higher installed on your machine.
-- `ffmpeg` installed on your machine for audio processing.
-- Access to the OpenAI API for GPT-4 and TTS services.
-- An FTP client installed for fetching weather data from the BOM.
+- Python 3.8+
+- `ffmpeg` (required for `pydub` to process audio)
+- Required Python packages (see `requirements.txt`)
 
-## Installation
+## Setup
 
-1. Clone the repository from GitHub.
+Clone the repository:
 
-    ```bash
-    git clone https://github.com/yourusername/live-news-break.git
-    cd live-news-break
-    ```
+```bash
+git clone https://github.com/troykelly/live-news-break.git
+cd live-news-break
+```
 
-2. Install the required Python packages.
+Install the required Python packages:
 
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-3. Ensure `ffmpeg` is installed and accessible in your system's PATH.
+```bash
+pip install -r requirements.txt
+```
 
 ## Configuration
 
-The script uses environmental variables for its configuration. Create a `.env` file in the root of your project with the following variables:
+You will need to set several environment variables for the script to work correctly. You can set these variables in a `.env` file at the root of the repository for convenience.
 
-```env
-# OpenAI API Key
-OPENAI_API_KEY=your_openai_api_key
+Here's an example configuration:
 
-# RSS Feed URL
-NEWS_READER_RSS=https://www.sbs.com.au/news/topic/latest/feed
-
-# Station Information
-NEWS_READER_STATION_NAME=Live News 24
-NEWS_READER_READER_NAME=Burnie Housedown
+```dotenv
+OPENAI_API_KEY=sk-proj-KEYKEYKEY
+OPENWEATHER_API_KEY=KEYKEYKEY
+NEWS_READER_STATION_NAME='News Update Radio'
+NEWS_READER_READER_NAME='OpenAI Shimmer'
 NEWS_READER_STATION_CITY=Sydney
 NEWS_READER_STATION_COUNTRY=Australia
-
-# TTS Configuration
-NEWS_READER_TTS_VOICE=alloy
-NEWS_READER_TTS_QUALITY=tts-1
-NEWS_READER_OUTPUT_FORMAT=flac
-
-# BOM Product ID
+NEWS_READER_TTS_VOICE=shimmer
+NEWS_READER_TTS_QUALITY=tts-1-hd
+NEWS_READER_AUDIO_INTRO=audio/intro.wav
+NEWS_READER_AUDIO_OUTRO=audio/outro.wav
+NEWS_READER_AUDIO_FIRST=audio/first.wav
+NEWS_READER_AUDIO_BREAK=audio/break.wav
+NEWS_READER_AUDIO_BED=audio/bed.wav
+NEWS_READER_TIMEZONE=Australia/Sydney
+NEWS_READER_TIMING_INTRO=16500
+NEWS_READER_TIMING_OUTRO=8500
+NEWS_READER_TIMING_BREAK=1600
+NEWS_READER_TIMING_FIRST=3300
+NEWS_READER_TIMING_BED=-500
+NEWS_READER_GAIN_BED=-15
+NEWS_READER_FADEIN_BED=0
+NEWS_READER_FADEOUT_BED=500
 NEWS_READER_BOM_PRODUCT_ID=IDN10064
-
-# Timing Configuration
-NEWS_READER_TIMING_INTRO=0
-NEWS_READER_TIMING_OUTRO=0
-NEWS_READER_TIMING_BREAK=0
-NEWS_READER_TIMING_FIRST=0
-
-# Sound Effects Files
-NEWS_READER_AUDIO_INTRO=path/to/intro_sound.mp3
-NEWS_READER_AUDIO_OUTRO=path/to/outro_sound.mp3
-NEWS_READER_AUDIO_BREAK=path/to/break_sound.mp3
-NEWS_READER_AUDIO_FIRST=path/to/first_sound.mp3
-
-# Prompt file
-NEWS_READER_PROMPT_FILE=./prompt.md
-
-# Output directory for the final audio file
-NEWS_READER_OUTPUT_DIR=./output
+OPENWEATHER_LAT=-33.8688
+OPENWEATHER_LON=151.2093
 ```
 
-## Usage
+Ensure to replace placeholder values, especially the `OPENAI_API_KEY` and `OPENWEATHER_API_KEY`, with your actual API keys.
 
-The main script `main.py` fetches news, generates a script, and produces an audio file. Run the following command to execute the script:
+## Running the Script
+
+After configuring your environment variables, you can run the script using:
 
 ```bash
 python src/main.py
 ```
 
-This script will:
+The script will fetch news articles, generate a news script, convert the script into audio, and save the output audio file based on your configuration.
 
-1. Fetch news articles from the configured RSS feed.
-2. Fetch weather data from the BOM.
-3. Generate a news script using OpenAI GPT-4.
-4. Convert the script into an audio file using TTS.
-5. Merge custom sound effects with the generated audio.
-6. Save the final audio file to the specified output directory.
+## Script Overview
 
-## Development
+### Main Functions
 
-### Project Structure
+- **parse_rss_feed**: Fetches and processes RSS feed data.
+- **fetch_bom_data**: Retrieves weather data from the Bureau of Meteorology.
+- **fetch_openweather_data**: Retrieves weather data from the OpenWeatherMap API.
+- **generate_news_script**: Uses the OpenAI API to generate a news script from fetched news items.
+- **generate_speech**: Converts script text into speech using the OpenAI TTS API.
+- **concatenate_audio_files**: Combines multiple audio files into one final output.
+- **check_audio_files**: Ensures all necessary audio files are available.
+- **generate_mixed_audio**: Mixes SFX audio with speech audio based on timing settings.
 
-```plaintext
-live-news-break/
-│
-├── .env                   # Environment variables file
-├── src/
-│   ├── main.py            # Main script file
-│   ├── utils.py           # Utility functions (if applicable)
-│   └── ...
-├── requirements.txt       # Python dependencies
-├── README.md              # Project documentation
-├── prompt.md              # Instructions for GPT-4 prompt
-└── output/                # Directory for output audio files
-```
+### Environment Variables
 
-### Adding New Features
+The script uses various environment variables for configuration. These include API keys, file paths for audio clips, text-to-speech settings, and more. Refer to the example environment configuration above.
 
-1. Fork the repository.
-2. Create a new feature branch.
-3. Implement and test your changes.
-4. Push your changes and create a pull request.
+### Logging
+
+The script includes logging statements to help you monitor the process and diagnose issues. Logs will be output to the console.
+
+## Contributing
+
+Contributions to this project are welcome. If you identify any bugs or have suggestions for improvements, please open an issue or submit a pull request.
 
 ## License
 
-This project is licensed under the Apache License. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
