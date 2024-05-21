@@ -20,13 +20,14 @@ Transform a list of news items into a coherent, engaging radio news script.
     - Begin with a brief introduction that sets the stage for the news update.
     - Present each news item in a logical sequence. Group related items together for a smoother flow.
     - Use transitions to connect different segments.
-    - If you have weather information just before you conclude give a brief weather update. Do not just read the weather as provided, add your personality. Use "rain" rather than "precipitation". Do not make up weather information if you don't have it.
+    - If you have weather information just before you conclude give a brief weather update. Do not just read the weather as provided, add your personality. Use "rain" rather than "precipitation". Use whole numbers not decimals for weather information. Do not make up weather information if you don't have it.
     - Conclude with a closing that reinforces the station's identity and you can throw in something funny to a broad audience.
     - Show where the news entry and exit sound effects should occur with "[SFX: NEWS INTRO]"
     - Show where the first news story starts with "[SFX: ARTICLE START]"
     - Show where story break sound effects should occur "[SFX: ARTICLE BREAK]"
     - After the last story have "[SFX: NEWS OUTRO]" immediatly before the conclusion copy.
     - Do not have an artical break SFX after the last article. Just denote the news outro.
+    - Do not modify the naming of the SFX events.
     - No other script notes are needed (ie, don't highlight the news reader on each article)
 
 4. **Stylistic Guidelines:**

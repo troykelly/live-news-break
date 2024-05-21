@@ -39,7 +39,8 @@
 				"KevinRose.vsc-python-indent",
 				"njpwerner.autodocstring",
 				"GitHub.copilot",
-				"GitHub.copilot-chat"
+				"GitHub.copilot-chat",
+				"ZainChen.json"
 			]
 		},
 	},

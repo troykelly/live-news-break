@@ -162,6 +162,7 @@ cython_debug/
 
 # APP
 /livenews.flac
+/weather.json
 audio/**
 
 # macOS General

@@ -4,15 +4,20 @@ import feedparser
 import openai
 import pytz
 import logging
-import requests
 import xml.etree.ElementTree as ET
+import html
+import requests
+import json
+import mutagen
 from openai import OpenAI
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from pydub import AudioSegment  # Ensure you have ffmpeg installed
 from tempfile import NamedTemporaryFile
 from random import choice
 from ftplib import FTP
+from mutagen.easyid3 import EasyID3
+from mutagen.flac import FLAC
 
 logging.basicConfig(level=logging.INFO)
 
@@ -27,20 +32,56 @@ AUDIO_FILES_ENV = {
     'INTRO': 'NEWS_READER_AUDIO_INTRO',
     'OUTRO': 'NEWS_READER_AUDIO_OUTRO',
     'BREAK': 'NEWS_READER_AUDIO_BREAK',
-    'FIRST': 'NEWS_READER_AUDIO_FIRST'
+    'FIRST': 'NEWS_READER_AUDIO_FIRST',
+    'BED': 'NEWS_READER_AUDIO_BED'
 }
 
 TIMINGS_ENV = {
     'INTRO': 'NEWS_READER_TIMING_INTRO',
     'OUTRO': 'NEWS_READER_TIMING_OUTRO',
     'BREAK': 'NEWS_READER_TIMING_BREAK',
-    'FIRST': 'NEWS_READER_TIMING_FIRST'
+    'FIRST': 'NEWS_READER_TIMING_FIRST',
+    'BED': 'NEWS_READER_TIMING_BED'
 }
+
+GAIN_ENV = {
+    'VOICE': 'NEWS_READER_GAIN_VOICE',
+    'INTRO': 'NEWS_READER_GAIN_INTRO',
+    'OUTRO': 'NEWS_READER_GAIN_OUTRO',
+    'BREAK': 'NEWS_READER_GAIN_BREAK',
+    'FIRST': 'NEWS_READER_GAIN_FIRST',
+    'BED': 'NEWS_READER_GAIN_BED'
+}
+
+FADEIN_ENV = {
+    'INTRO': 'NEWS_READER_FADEIN_INTRO',
+    'OUTRO': 'NEWS_READER_FADEIN_OUTRO',
+    'BREAK': 'NEWS_READER_FADEIN_BREAK',
+    'FIRST': 'NEWS_READER_FADEIN_FIRST',
+    'BED': 'NEWS_READER_FADEIN_BED'
+}
+
+FADEOUT_ENV = {
+    'INTRO': 'NEWS_READER_FADEOUT_INTRO',
+    'OUTRO': 'NEWS_READER_FADEOUT_OUTRO',
+    'BREAK': 'NEWS_READER_FADEOUT_BREAK',
+    'FIRST': 'NEWS_READER_FADEOUT_FIRST',
+    'BED': 'NEWS_READER_FADEOUT_BED'
+}
+
+# Weather Data
+WEATHER_JSON_PATH = os.getenv('NEWS_READER_WEATHER_JSON', './weather.json')
 
 # BOM data configuration
 BOM_PRODUCT_ID = os.getenv('NEWS_READER_BOM_PRODUCT_ID', 'IDN10064')
 STATION_CITY = os.getenv('NEWS_READER_STATION_CITY', 'Sydney')
 STATION_COUNTRY = os.getenv('NEWS_READER_STATION_COUNTRY', 'Australia')
+
+# OpenWeather Variable configuration
+OPENWEATHER_API_KEY = os.getenv('OPENWEATHER_API_KEY')
+OPENWEATHER_LAT = os.getenv('OPENWEATHER_LAT')
+OPENWEATHER_LON = os.getenv('OPENWEATHER_LON')
+OPENWEATHER_UNITS = os.getenv('OPENWEATHER_UNITS', 'metric')
 
 # RSS Feed configuration
 FEED_CONFIG = {
@@ -63,17 +104,20 @@ def parse_rss_feed(feed_url, config):
     Returns:
         list: List of dictionaries, each representing a news item.
     """
-    feed = feedparser.parse(feed_url)
+    feed = feedparser.parse(feed_url, agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36')
     parsed_items = []
-
+    
     for entry in feed.entries:
+        logging.info(f"Processing entry: {entry.title}")
         if any(re.search(pattern, entry.title) for pattern in config['IGNORE_PATTERNS']):
             continue
-
-        item = {config_field: entry.get(feed_field, None)
+        
+        categories = [clean_text(cat['term']) for cat in entry.get('tags', [])]
+        item = {config_field: clean_text(entry.get(feed_field, ''))
                 for config_field, feed_field in config.items()
-                if config_field != 'IGNORE_PATTERNS'}
-
+                if config_field not in ['IGNORE_PATTERNS', 'CATEGORY']}
+        item['CATEGORY'] = ', '.join(categories) if categories else 'General'
+        
         parsed_items.append(item)
 
     return parsed_items
@@ -137,6 +181,193 @@ def fetch_bom_data(product_id):
         logging.error(f"Failed to fetch BOM data: {e}")
         return None
 
+def fetch_openweather_data(api_key, lat, lon, units, weather_json_path):
+    """Fetches weather data from OpenWeatherMap API and caches the result in a JSON file.
+
+    Args:
+        api_key (str): The OpenWeatherMap API key.
+        lat (str): The latitude of the location for which to fetch weather data.
+        lon (str): The longitude of the location for which to fetch weather data.
+        units (str): Units of measurement ("standard", "metric", or "imperial").
+        weather_json_path (str): Path to the JSON file for storing fetched weather data.
+
+    Returns:
+        dict: Weather information as a dictionary if successful, None otherwise.
+    """
+    if not api_key or not lat or not lon:
+        logging.error("OpenWeather API key, latitude, or longitude not set.")
+        return None
+
+    weather_file = Path(weather_json_path)
+    current_time = datetime.now(timezone.utc)
+    
+    if weather_file.exists():
+        try:
+            with open(weather_json_path, 'r', encoding='utf-8') as file:
+                weather_data = json.load(file)
+                fetched_time = datetime.strptime(weather_data['dt'], '%Y-%m-%dT%H:%M:%SZ')
+                fetched_time = fetched_time.replace(tzinfo=timezone.utc)
+                if current_time - fetched_time < timedelta(minutes=15):
+                    return weather_data['data']
+        except (json.JSONDecodeError, KeyError, ValueError) as e:
+            logging.warning(f"Error reading or parsing weather JSON file: {e}. Fetching new data.")
+    
+    # Fetch new data from OpenWeatherMap API due to stale data or parsing error
+    weather_api_url = (
+        f"https://api.openweathermap.org/data/3.0/onecall?lat={lat}&lon={lon}&units={units}&appid={api_key}"
+    )
+
+    try:
+        response = requests.get(weather_api_url)
+        response.raise_for_status()
+        weather_data = response.json()
+        
+        # Store the current time and weather data to JSON file
+        data_to_save = {
+            'dt': current_time.strftime('%Y-%m-%dT%H:%M:%SZ'),
+            'data': weather_data
+        }
+        with open(weather_json_path, 'w', encoding='utf-8') as file:
+            json.dump(data_to_save, file)
+        
+        return weather_data
+
+    except requests.RequestException as e:
+        logging.error(f"Failed to fetch weather data from OpenWeatherMap: {e}")
+        return None
+
+def convert_wind_speed(speed, units):
+    """Convert wind speed to the appropriate unit."""
+    if units == 'metric':
+        # Convert m/s to km/h
+        return speed * 3.6
+    return speed
+
+def wind_direction(deg):
+    """Convert wind direction in degrees to compass direction."""
+    directions = [
+        "North", "North North East", "North East", "East North East", "East", 
+        "East South East", "South East", "South South East", "South", 
+        "South South West", "South West", "West South West", "West", 
+        "West North West", "North West", "North North West"
+    ]
+    idx = int((deg + 11.25) / 22.5) % 16
+    return directions[idx]
+
+def set_audio_metadata(file_path, metadata):
+    """
+    Sets metadata for an audio file.
+    
+    Args:
+        file_path (str): Path to the audio file.
+        metadata (dict): A dictionary of metadata to set.
+    """
+    try:
+        file_path = str(file_path)  # Convert PosixPath to string
+        
+        if file_path.endswith('.mp3'):
+            audio = EasyID3(file_path)
+        elif file_path.endswith('.flac'):
+            audio = FLAC(file_path)
+        elif file_path.endswith('.ogg'):
+            audio = mutagen.File(file_path, easy=True)
+        else:
+            logging.warning(f"File format not supported for metadata: {file_path}")
+            return
+        
+        # Set metadata
+        for key, value in metadata.items():
+            try:
+                audio[key] = value
+            except mutagen.MutagenError as e:
+                logging.warning(f"Error setting metadata key '{key}': {e}")
+        
+        # Save changes
+        audio.save()
+        logging.info(f"Metadata successfully updated for {file_path}")
+    except mutagen.MutagenError as e:
+        logging.error(f"Error opening file '{file_path}' for metadata update: {e}")
+
+def format_datetime(dt):
+    """Format datetime to a full and human-readable format."""
+    # Suffixes for day of the month
+    day_suffix = lambda d: 'th' if 10 <= d % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(d % 10, 'th')
+    day = dt.day
+    suffix = day_suffix(day)
+    formatted_datetime = dt.strftime(f'%A the {day}{{suffix}} of %B %Y at %H:%M (%Z)')
+    return formatted_datetime.replace("{suffix}", suffix)
+
+def generate_openweather_weather_report(data, units='metric'):
+    """Generate a weather report from JSON data."""
+
+    timezone_offset = data['timezone_offset']
+    current_weather = data['current']
+    minutely_weather = data['minutely']
+    daily_weather = data['daily'][0]
+    next_day_weather = data['daily'][1]
+
+    # Convert timestamps to readable formats with timezone
+    current_time = datetime.fromtimestamp(current_weather['dt'], timezone(timedelta(seconds=timezone_offset)))
+    sunrise = datetime.fromtimestamp(current_weather['sunrise'], timezone(timedelta(seconds=timezone_offset)))
+    sunset = datetime.fromtimestamp(current_weather['sunset'], timezone(timedelta(seconds=timezone_offset)))
+
+    # Unit labels
+    temp_unit = '°C' if units == 'metric' else '°F'
+    wind_speed_unit = 'km/h' if units == 'metric' else 'mph'
+    
+    # Convert wind speed if necessary
+    wind_speed = convert_wind_speed(current_weather['wind_speed'], units)
+    wind_bearing = wind_direction(current_weather['wind_deg'])
+    
+    # Current weather report
+    current_report = (
+        f"Current Weather Update as of {format_datetime(current_time)}:\n"
+        f"Temperature: {current_weather['temp']}{temp_unit} (Feels like: {current_weather['feels_like']}{temp_unit})\n"
+        f"Humidity: {current_weather['humidity']}%\n"
+        f"Condition: {current_weather['weather'][0]['description'].capitalize()}\n"
+        f"Wind: {wind_speed:.2f} {wind_speed_unit} from the {wind_bearing}\n"
+        f"UV Index: {current_weather['uvi']}\n"
+        f"Sunrise at: {format_datetime(sunrise)}, Sunset at: {format_datetime(sunset)}\n"
+    )
+
+    # Immediate future weather
+    future_rain = [minute['precipitation'] for minute in minutely_weather[:60]]  # Next hour
+    future_total_rain = sum(future_rain)
+    if future_total_rain > 0:
+        immediate_future_report = (
+            f"In the immediate future, expect light rain with a total precipitation of "
+            f"{future_total_rain:.1f} mm over the next hour."
+        )
+    else:
+        immediate_future_report = "No significant precipitation expected in the immediate future."
+
+    # Convert next day wind speed
+    next_day_wind_speed = convert_wind_speed(next_day_weather['wind_speed'], units)
+    next_day_wind_bearing = wind_direction(next_day_weather['wind_deg'])
+
+    # Next day weather report
+    next_day_report = (
+        f"Weather Forecast for Tomorrow ({format_datetime(datetime.fromtimestamp(next_day_weather['dt'], timezone(timedelta(seconds=timezone_offset))))}):\n"
+        f"Day Temperature: {next_day_weather['temp']['day']}{temp_unit} (Feels like: {next_day_weather['feels_like']['day']}{temp_unit})\n"
+        f"Night Temperature: {next_day_weather['temp']['night']}{temp_unit} (Feels like: {next_day_weather['feels_like']['night']}{temp_unit})\n"
+        f"Condition: {next_day_weather['summary']}\n"
+        f"Humidity: {next_day_weather['humidity']}%\n"
+        f"Wind: {next_day_wind_speed:.2f} {wind_speed_unit} from the {next_day_wind_bearing}\n"
+        f"Chance of Rain: {next_day_weather['pop']*100}%"
+    )
+
+    # Combine all reports
+    full_report = f"{current_report}\n{immediate_future_report}\n\n{next_day_report}"
+    
+    return full_report
+
+def clean_text(input_string):
+    """Remove HTML tags, non-human-readable content, and excess whitespace from the text."""
+    cleanr = re.compile('<.*?>')
+    cleantext = re.sub(cleanr, '', html.unescape(input_string))
+    cleaned_whitespace = re.sub(r'\s+', ' ', cleantext)
+    return cleaned_whitespace.strip()
+
 def get_timing_value(env_key, default="None"):
     """Retrieve the timing value from the environment.
 
@@ -172,26 +403,42 @@ def generate_news_script(news_items, prompt_instructions, station_name, reader_n
 
     client = OpenAI(api_key=api_key)
 
-    max_tokens = 4095
-    news_content = "\n\n".join(
-        [f"{index + 1}. **Headline:** {item['TITLE']}\n   **Category:** {item.get('CATEGORY', 'General')}\n   **Description:** {item['DESCRIPTION']}"
-        for index, item in enumerate(news_items)]
-    )
+    max_tokens = 8192
+    max_completion_tokens = 4095
+    prompt_length = len(prompt_instructions.split())
     station_ident = f'Station Name is "{station_name}"\nStation city is "{STATION_CITY}"\nStation country is "{STATION_COUNTRY}"\nNews reader name is "{reader_name}"'
     time_ident = f'Current date and time is "{current_time}"\n'
 
-    prompt_length = len(prompt_instructions.split())
-    news_length = len(news_content.split())
+    combined_prompt = time_ident + station_ident + "\n\n"
+    news_content = ""
+    news_length = 0
+    seen_titles = set()
 
-    if prompt_length + news_length > max_tokens:
+    for index, item in enumerate(news_items):
+        title = item['TITLE']
+        # Skip the item if the title has already been seen
+        if title in seen_titles:
+            continue
+
+        new_entry = f"{index + 1}. **Headline:** {title}\n   **Category:** {item.get('CATEGORY', 'General')}\n   **Description:** {item['DESCRIPTION']}\n\n"
+        new_entry_length = len(new_entry.split())
+
+        if prompt_length + news_length + new_entry_length > max_tokens:
+            break
+
+        news_content += new_entry
+        news_length += new_entry_length
+        seen_titles.add(title)  # Mark the title as seen
+
+    if not news_content:
+        logging.info(f"News Content: {news_content}")
+        logging.info(f"Prompt length: {prompt_length}, News length: {news_length}")
         raise ValueError(
             f"The combined length of the prompt instructions and news content "
             f"exceeds the maximum token limit for the OpenAI API: {max_tokens} tokens."
         )
 
-    user_prompt = (
-        time_ident + station_ident + "\n\n" + news_content
-    )
+    user_prompt = combined_prompt + news_content
     
     logging.info(f"User prompt: {user_prompt}")
 
@@ -202,7 +449,7 @@ def generate_news_script(news_items, prompt_instructions, station_name, reader_n
                 {"role": "system", "content": prompt_instructions},
                 {"role": "user", "content": user_prompt}
             ],
-            max_tokens=max_tokens - prompt_length
+            max_tokens=max_completion_tokens
         )
         return response.choices[0].message.content
     except openai.OpenAIError as e:
@@ -375,7 +622,7 @@ def generate_mixed_audio(sfx_file, speech_file, timing):
 
 def main():
     """Main function that fetches, parses, and processes the RSS feed into audio."""
-    feed_url = os.getenv('NEWS_READER_RSS', 'https://www.sbs.com.au/news/topic/latest/feed')
+    feed_url = os.getenv('NEWS_READER_RSS', 'https://rsshub.app/apnews/topics/apf-topnews')
     station_name = os.getenv('NEWS_READER_STATION_NAME', 'Live News 24')
     reader_name = os.getenv('NEWS_READER_READER_NAME', 'Burnie Housedown')
     tts_voice = os.getenv('NEWS_READER_TTS_VOICE', 'alloy')
@@ -409,10 +656,22 @@ def main():
         logging.warning("No news items found in the feed.")
         return
 
-    # Fetch BOM weather data
-    weather_info = fetch_bom_data(BOM_PRODUCT_ID)
-    
-    # Append weather info as the first item in the news items if available and valid
+    weather_info = None
+
+    openweather_api_key = os.getenv('OPENWEATHER_API_KEY')
+    openweather_lat = os.getenv('OPENWEATHER_LAT')
+    openweather_lon = os.getenv('OPENWEATHER_LON')
+    openweather_units = os.getenv('OPENWEATHER_UNITS', 'metric')  # default to metric if not set
+
+    if openweather_api_key and openweather_lat and openweather_lon:
+        weather_data = fetch_openweather_data(openweather_api_key, openweather_lat, openweather_lon, openweather_units, WEATHER_JSON_PATH)
+        if weather_data:
+            weather_info = generate_openweather_weather_report(weather_data, openweather_units)
+    else:
+        bom_product_id = os.getenv('BOM_PRODUCT_ID')
+        if bom_product_id:
+            weather_info = fetch_bom_data(bom_product_id)
+
     if weather_info and "No data" not in weather_info and "No description" not in weather_info:
         news_items.insert(0, {'TITLE': 'Weather Report', 'DESCRIPTION': weather_info, 'CATEGORY': 'weather'})
     else:
@@ -465,6 +724,10 @@ def main():
         OUTRO_PLACEHOLDER: "OUTRO"
     }
 
+    article_start_time = None
+    article_end_time = None
+    total_duration = 0
+
     while current_index < len(script_sections):
         section = script_sections[current_index]
         if section in placeholder_to_key:
@@ -480,6 +743,19 @@ def main():
                     final_audio += mixed_audio
                     speech_audio_files.append(speech_audio_file)
                     current_index += 2
+
+                    if sfx_key == "OUTRO" and article_end_time is None:
+                        article_end_time = total_duration
+                        logging.info(f"Music bed to start at {article_end_time}.")
+                        
+                    if sfx_key == "FIRST" and article_start_time is None:
+                        timing_offset = 0
+                        if timing_value.lower() != "none":
+                            timing_offset = int(timing_value)
+                        article_start_time = total_duration + timing_offset
+                        logging.info(f"Music bed to end at {article_start_time}.")
+
+                    total_duration += len(mixed_audio)
                 else:
                     raise ValueError("SFX placeholder found at the end without subsequent text.")
             else:
@@ -487,11 +763,59 @@ def main():
                 current_index += 1
         else:
             speech_audio_file = generate_speech(section, openai_api_key, tts_voice, tts_quality, output_format)
-            final_audio += AudioSegment.from_file(speech_audio_file)
+            speech_audio = AudioSegment.from_file(speech_audio_file)
+            final_audio += speech_audio
             speech_audio_files.append(speech_audio_file)
             current_index += 1
 
+            if article_start_time is None:
+                article_start_time = total_duration
+
+            total_duration += len(speech_audio)
+            article_end_time = total_duration
+
+    # Post-process to add music bed
+    bed_file = audio_files.get("BED", None)
+    if bed_file and article_start_time is not None and article_end_time is not None:
+        bed_audio = AudioSegment.from_file(bed_file)
+        # Ensure fade values are converted to integers and have default fallback values if not set
+        bed_gain = float(os.getenv(GAIN_ENV["BED"], -15))
+        bed_fadein = int(os.getenv(FADEIN_ENV["BED"], 0) or 0)
+        bed_fadeout = int(os.getenv(FADEOUT_ENV["BED"], 500) or 500)
+        bed_offset = int(os.getenv(TIMINGS_ENV["BED"], 0) or 0)
+
+        # Adjust the start time of the bed audio in case of a negative offset
+        adjusted_article_start_time = max(0, article_start_time + bed_offset)
+        if article_start_time is not None and article_end_time is not None:
+            bed_duration = article_end_time - article_start_time
+            looped_bed_audio = AudioSegment.empty()
+
+            while len(looped_bed_audio) < bed_duration:
+                looped_bed_audio += bed_audio
+
+            looped_bed_audio = looped_bed_audio[:bed_duration]
+            looped_bed_audio = looped_bed_audio.apply_gain(bed_gain)
+
+            if bed_fadein > 0:
+                looped_bed_audio = looped_bed_audio.fade_in(bed_fadein)
+            if bed_fadeout > 0:
+                looped_bed_audio = looped_bed_audio.fade_out(bed_fadeout)
+            # Overlay the bed audio starting from the adjusted article start time
+            combined_audio = final_audio.overlay(looped_bed_audio, position=adjusted_article_start_time)
+            final_audio = combined_audio
+
     final_audio.export(output_file_path, format=output_format)
+    
+    # Set metadata for the generated audio file
+    metadata = {
+        'title': f"{station_name} News Broadcast - {current_time}",
+        'artist': f"{reader_name}",
+        'album': 'News Bulletin',
+        'date': datetime.now().strftime('%Y-%m-%d'),
+        'genre': 'News',
+        'lyrics': news_script
+    }
+    set_audio_metadata(output_file_path, metadata)    
     logging.info(f"News audio generated and saved to {output_file_path}")
 
 if __name__ == '__main__':
