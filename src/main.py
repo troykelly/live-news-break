@@ -820,11 +820,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-# if __name__ == "__main__":
-#     weather_data = fetch_openweather_data(OPENWEATHER_API_KEY, OPENWEATHER_LAT, OPENWEATHER_LON, OPENWEATHER_UNITS, WEATHER_JSON_PATH)
-#     if weather_data:
-#         print(json.dumps(weather_data, indent=2))
-#         weather_report = generate_openweather_weather_report(weather_data, OPENWEATHER_UNITS)
-#         print(weather_report)
-#     else:
-#         print("Failed to retrieve weather data.")
