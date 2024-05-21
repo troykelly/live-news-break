@@ -207,18 +207,19 @@ def process_text_for_tts(text):
     return apply_lexicon(text, lexicon)
 
 def parse_rss_feed(feed_url, config):
-    """Parses the RSS feed, filtering out ignored articles using regex patterns.
+    """Parses the RSS feed, filtering out ignored articles using regex patterns 
+    and sorts the articles from most recent to oldest.
 
     Args:
         feed_url (str): URL of the RSS feed.
         config (dict): Configuration dictionary for field mappings and ignore patterns.
 
     Returns:
-        list: List of dictionaries, each representing a news item.
+        list: List of dictionaries, each representing a news item, sorted by most recent.
     """
     feed = feedparser.parse(feed_url, agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36')
     parsed_items = []
-    
+
     for entry in feed.entries:
         logging.info(f"Processing entry: {entry.title}")
         if any(re.search(pattern, entry.title) for pattern in config['IGNORE_PATTERNS']):
@@ -229,21 +230,24 @@ def parse_rss_feed(feed_url, config):
                 for config_field, feed_field in config.items()
                 if config_field not in ['IGNORE_PATTERNS', 'CATEGORY']}
         item['CATEGORY'] = ', '.join(categories) if categories else 'General'
-        
+
         # Ensure we correctly parse the published date
         if hasattr(entry, 'published_parsed'):
             published_date = datetime(*entry.published_parsed[:6])
+            item['PUBLISHED'] = published_date
         elif 'published' in entry:
             try:
                 published_date = datetime.strptime(entry.published, '%a, %d %b %Y %H:%M:%S %Z')
+                item['PUBLISHED'] = published_date
             except ValueError:
-                published_date = 'Unknown'
+                item['PUBLISHED'] = None
         else:
-            published_date = 'Unknown'
-        
-        item['PUBLISHED'] = published_date
-        
+            item['PUBLISHED'] = None
+
         parsed_items.append(item)
+
+    # Sort the parsed items by the published date in descending order
+    parsed_items.sort(key=lambda x: x['PUBLISHED'] or datetime.min, reverse=True)
 
     return parsed_items
 
