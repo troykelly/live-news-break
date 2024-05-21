@@ -16,6 +16,16 @@ The `live-news-break` repository contains a news generation script that fetches,
 
 Listen to the demo here: [https://audio.com/troy-8/audio/troykelly-live-news-break-demo-reel-1](https://audio.com/troy-8/audio/troykelly-live-news-break-demo-reel-1)
 
+## Test
+
+To test with docker:
+
+```bash
+docker run --rm -e OPENAI_API_KEY=SETKEYHERE -e NEWS_READER_OUTPUT_DIR=/mnt/audio -v "${PWD}:/mnt/audio" ghcr.io/troykelly/live-news-break:edge
+```
+
+Make sure to set your correct OPENAI_API_KEY
+
 ## Prerequisites
 
 Ensure you have the following software installed on your system:
