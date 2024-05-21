@@ -60,8 +60,8 @@ Here's an example configuration, see the docker compose file for an exhaustive l
 ```dotenv
 OPENAI_API_KEY=sk-proj-KEYKEYKEY
 OPENWEATHER_API_KEY=KEYKEYKEY
-NEWS_READER_STATION_NAME='News Update Radio'
-NEWS_READER_READER_NAME='OpenAI Shimmer'
+NEWS_READER_STATION_NAME=News Update Radio
+NEWS_READER_READER_NAME=OpenAI Shimmer
 NEWS_READER_STATION_CITY=Sydney
 NEWS_READER_STATION_COUNTRY=Australia
 NEWS_READER_TTS_VOICE=shimmer
@@ -291,8 +291,8 @@ NEWS_READER_RSS=https://example.com/rss-feed
 NEWS_READER_OUTPUT_DIR=/output
 NEWS_READER_OUTPUT_FILE=news_%Y%_%m%_%d%_%H%_%M%_%S%.mp3
 NEWS_READER_OUTPUT_LINK=/path/to/latest_news.mp3
-NEWS_READER_STATION_NAME='News Update Radio'
-NEWS_READER_READER_NAME='OpenAI Shimmer'
+NEWS_READER_STATION_NAME=News Update Radio
+NEWS_READER_READER_NAME=OpenAI Shimmer
 NEWS_READER_STATION_CITY=Sydney
 NEWS_READER_STATION_COUNTRY=Australia
 NEWS_READER_TTS_VOICE=shimmer
