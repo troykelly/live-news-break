@@ -16,7 +16,7 @@ pydantic==2.7.1
 pydantic_core==2.18.2
 pydub==0.25.1
 pytz==2024.1
-requests==2.31.0
+requests==2.32.0
 setuptools==69.0.3
 sgmllib3k==1.0.0
 smmap==5.0.1
