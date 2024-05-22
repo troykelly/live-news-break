@@ -961,15 +961,24 @@ def generate_news_audio():
             final_audio = combined_audio
 
     final_audio.export(output_file_path, format=output_format)
+    
+    metadata_human_date = current_time.strftime('%A, %B %d, %Y at %I:%M %p %Z')
 
     # Set metadata for the generated audio file
     metadata = {
-        'title': f"{station_name} News Broadcast - {current_time}",
+        'title': f"{station_name} News Broadcast for {metadata_human_date}",
         'artist': f"{reader_name}",
         'album': 'News Bulletin',
         'date': datetime.now().strftime('%Y-%m-%d'),
         'genre': 'News',
-        'lyrics': news_script
+        'comments': news_script,
+        'discnumber': '1',
+        'tracknumber': '1',
+        'language': 'en',
+        'publisher': f"{station_name} News",
+        'year': datetime.now().strftime('%Y'),
+        'encodedby': 'News Reader',
+        'source': f"RSS: {feed_url}",
     }
     set_audio_metadata(output_file_path, metadata)
     logging.info(f"News audio generated and saved to {output_file_path}")
