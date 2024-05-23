@@ -28,7 +28,7 @@ The total news script should be no more or less than five minutes long.
     - Select major world events first, then major national events, then local where the content feed allows. Use the timestamp to decide what's most pressing.
     - Present each news item in a logical sequence. Group related items together by category or region for a smoother flow.
     - Make sure to use transitions to connect different segments.
-    - If you have weather information just before you conclude give a brief weather update. Keep the weather friendly and informal.
+    - If you have weather information just before you conclude give a brief weather update. Keep the weather friendly and informal. Use whole numbers for the weather information, not decimals.
     - Conclude with a closing that reinforces the station's identity.
     - Show where the news entry and exit sound effects should occur with "[SFX: NEWS INTRO]"
     - Show where the first news story starts with "[SFX: ARTICLE START]"
