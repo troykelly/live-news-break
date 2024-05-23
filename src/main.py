@@ -11,6 +11,7 @@ import json
 import mutagen
 import time
 from openai import OpenAI
+import mutagen.id3  # Importing mutagen's id3 for SynLyrics
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from pydub import AudioSegment  # Ensure you have ffmpeg installed
@@ -18,7 +19,7 @@ from tempfile import NamedTemporaryFile
 from random import choice
 from ftplib import FTP
 from mutagen.easyid3 import EasyID3
-from mutagen.flac import FLAC
+from mutagen.flac import FLAC, Picture, VCFLACDict  # Importing FLAC specific classes for FLAC metadata
 from croniter import croniter
 
 logging.basicConfig(level=logging.INFO)
@@ -212,6 +213,74 @@ def process_text_for_tts(text):
     """
     lexicon = load_lexicon(LEXICON_JSON_PATH)
     return apply_lexicon(text, lexicon)
+
+def set_synchronized_lyrics_metadata(audio_path, timestamps, lyrics_text):
+    """
+    Sets the synchronized lyrics metadata for an audio file using the timestamps and lyrics text.
+
+    Args:
+        audio_path (str): Path to the audio file.
+        timestamps (list): List of timestamps for each segment in format [MM:SS.ss].
+        lyrics_text (str): The lyrics text to sync with the timestamps.
+    """
+    try:
+        # Convert PosixPath to string if necessary
+        audio_path = str(audio_path)
+
+        if audio_path.endswith('.mp3'):
+            # For MP3 files
+            audio = ID3(audio_path)
+            sync_lyrics = [f"[{timestamp}]{text}" for timestamp, text in zip(timestamps, lyrics_text)]
+            audio.add(USLT(encoding=3, desc="SynchronizedLyricsText", text="\n".join(sync_lyrics)))
+            audio.save()
+        elif audio_path.endswith('.flac'):
+            # For FLAC files, we'll use Vorbis comments
+            audio = FLAC(audio_path)
+            sync_lyrics = [f"[{timestamp}]{text}" for timestamp, text in zip(timestamps, lyrics_text)]
+            audio['SynchronizedLyricsText'] = "\n".join(sync_lyrics)
+            audio.save()
+        else:
+            logging.warning(f"Unsupported file format for synchronized lyrics: {audio_path}")
+
+        logging.info(f"Synchronized lyrics metadata successfully updated for {audio_path}")
+    except Exception as e:
+        logging.error(f"An error occurred while updating synchronized lyrics metadata: {e}")
+
+def generate_mixed_audio_and_track_timestamps(sfx_file, speech_file, timing, start_offset):
+    """Generate the mixed audio segment based on the provided timing, tracking timestamps."""
+    sfx_audio = AudioSegment.from_file(sfx_file)
+    speech_audio = AudioSegment.from_file(speech_file)
+    
+    logging.info(f"Mixing audio with timing: {timing}")
+
+    if timing.lower() != "none":
+        timing_offset = int(timing)
+        sfx_duration = len(sfx_audio)
+        speech_duration = len(speech_audio)
+        if timing_offset > sfx_duration:
+            # Add silence after SFX for the timing offset
+            padding = timing_offset - sfx_duration
+            combined_audio = sfx_audio + AudioSegment.silent(duration=padding) + speech_audio
+            speech_start_time = start_offset + sfx_duration + padding
+        else:
+            # Overlay speech onto SFX at the specified timing offset
+            combined_audio = sfx_audio.overlay(speech_audio, position=timing_offset)
+            speech_start_time = start_offset + timing_offset
+            if timing_offset + speech_duration > sfx_duration:
+                # Add remaining speech to the end if extends beyond SFX
+                combined_audio = combined_audio + speech_audio[sfx_duration - timing_offset:]
+    else:
+        logging.info("No overlay timing specified, appending speech to SFX")
+        combined_audio = sfx_audio + speech_audio
+        speech_start_time = start_offset + len(sfx_audio)
+
+    return combined_audio, speech_start_time / 1000  # Convert to seconds for SynLyrics
+
+def format_timestamp(seconds):
+    """Convert float seconds to a timestamp in [MM:SS.ss] format."""
+    minutes = int(seconds // 60)
+    remainder_seconds = seconds % 60
+    return f"{minutes:02d}:{remainder_seconds:05.2f}"
 
 def parse_rss_feed(feed_url, config):
     """Parses the RSS feed, filtering out ignored articles using regex patterns 
@@ -880,9 +949,9 @@ def generate_news_audio():
         OUTRO_PLACEHOLDER: "OUTRO"
     }
 
-    article_start_time = None
-    article_end_time = None
-    total_duration = 0
+    total_elapsed_time = 0  # Track cumulative time for timestamps
+    timestamps = []
+    lyrics_text = []
 
     while current_index < len(script_sections):
         section = script_sections[current_index]
@@ -895,23 +964,14 @@ def generate_news_audio():
                 if current_index + 1 < len(script_sections):
                     speech_text = script_sections[current_index + 1]
                     speech_audio_file = generate_speech(speech_text, openai_api_key, tts_voice, tts_quality, output_format)
-                    mixed_audio = generate_mixed_audio(sfx_file, speech_audio_file, timing_value)
+                    mixed_audio, speech_start_time = generate_mixed_audio_and_track_timestamps(sfx_file, speech_audio_file, timing_value, total_elapsed_time * 1000)
                     final_audio += mixed_audio
                     speech_audio_files.append(speech_audio_file)
                     current_index += 2
 
-                    if sfx_key == "OUTRO" and article_end_time is None:
-                        article_end_time = total_duration
-                        logging.info(f"Music bed to end at {article_end_time}.")
-                        
-                    if sfx_key == "FIRST" and article_start_time is None:
-                        timing_offset = 0
-                        if timing_value.lower() != "none":
-                            timing_offset = int(timing_value)
-                        article_start_time = total_duration + timing_offset
-                        logging.info(f"Music bed to start at {article_start_time}.")
-
-                    total_duration += len(mixed_audio)
+                    timestamps.append(format_timestamp(speech_start_time))
+                    lyrics_text.append(speech_text)
+                    total_elapsed_time += len(mixed_audio) / 1000  # Update elapsed time (in seconds)
                 else:
                     raise ValueError("SFX placeholder found at the end without subsequent text.")
             else:
@@ -924,15 +984,13 @@ def generate_news_audio():
             speech_audio_files.append(speech_audio_file)
             current_index += 1
 
-            if article_start_time is None:
-                article_start_time = total_duration
-
-            total_duration += len(speech_audio)
-            article_end_time = total_duration
+            total_elapsed_time += len(speech_audio) / 1000  # Update elapsed time (in seconds)
+            timestamps.append(format_timestamp(total_elapsed_time))
+            lyrics_text.append(section)
 
     # Post-process to add music bed
     bed_file = audio_files.get("BED", None)
-    if bed_file and article_start_time is not None and article_end_time is not None:
+    if bed_file:
         bed_audio = AudioSegment.from_file(bed_file)
         # Ensure fade values are converted to integers and have default fallback values if not set
         bed_gain = float(os.getenv(GAIN_ENV["BED"], -15))
@@ -940,10 +998,8 @@ def generate_news_audio():
         bed_fadeout = int(os.getenv(FADEOUT_ENV["BED"], 500) or 500)
         bed_offset = int(os.getenv(TIMINGS_ENV["BED"], 0) or 0)
 
-        # Adjust the start time of the bed audio in case of a negative offset
-        adjusted_article_start_time = max(0, article_start_time + bed_offset)
-        if article_start_time is not None and article_end_time is not None:
-            bed_duration = article_end_time - article_start_time
+        if total_elapsed_time > 0:
+            bed_duration = total_elapsed_time * 1000  # Convert to milliseconds
             looped_bed_audio = AudioSegment.empty()
 
             while len(looped_bed_audio) < bed_duration:
@@ -956,31 +1012,40 @@ def generate_news_audio():
                 looped_bed_audio = looped_bed_audio.fade_in(bed_fadein)
             if bed_fadeout > 0:
                 looped_bed_audio = looped_bed_audio.fade_out(bed_fadeout)
-            # Overlay the bed audio starting from the adjusted article start time
-            combined_audio = final_audio.overlay(looped_bed_audio, position=adjusted_article_start_time)
+            # Overlay the bed audio to match the full duration of the combined audio
+            combined_audio = final_audio.overlay(looped_bed_audio, position=0)
             final_audio = combined_audio
 
     final_audio.export(output_file_path, format=output_format)
-    
+
+    # Human readable date for metadata
     metadata_human_date = current_time.strftime('%A, %B %d, %Y at %I:%M %p %Z')
+    
+    # The release time of the news read (time plus time shift if it's set) as YYYY-MM-DDThh:mm:ssZ
+    metadata_release_time = (current_time + timeshift_delta).strftime('%Y-%m-%dT%H:%M:%SZ')
 
     # Set metadata for the generated audio file
     metadata = {
         'title': f"{station_name} News Broadcast for {metadata_human_date}",
+        'subtitle': f"Read by {reader_name}",
         'artist': f"{reader_name}",
         'album': 'News Bulletin',
         'date': datetime.now().strftime('%Y-%m-%d'),
+        'releasetime': metadata_release_time,
         'genre': 'News',
-        'comments': news_script,
+        'comment': news_script,
         'discnumber': '1',
         'tracknumber': '1',
         'language': 'en',
         'publisher': f"{station_name} News",
         'year': datetime.now().strftime('%Y'),
-        'encodedby': 'News Reader',
+        'encodedby': 'https://github.com/troykelly/live-news-break',
         'source': f"RSS: {feed_url}",
+        'copyright': f"Copyright © {station_name} {datetime.now().strftime('%Y')}",
+        'publisherurl': 'https://github.com/troykelly/live-news-break',
     }
     set_audio_metadata(output_file_path, metadata)
+    set_synchronized_lyrics_metadata(output_file_path, timestamps, lyrics_text)  # Set SynLyrics metadata
     logging.info(f"News audio generated and saved to {output_file_path}")
 
     # Handle the NEWS_READER_OUTPUT_LINK environment variable
