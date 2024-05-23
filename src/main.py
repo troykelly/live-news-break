@@ -10,7 +10,11 @@ import requests
 import json
 import mutagen
 import time
+import hashlib
+import acoustid
+import traceback
 from openai import OpenAI
+import mutagen.id3  # Importing mutagen's id3 for SynLyrics
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from pydub import AudioSegment  # Ensure you have ffmpeg installed
@@ -20,6 +24,7 @@ from ftplib import FTP
 from mutagen.easyid3 import EasyID3
 from mutagen.flac import FLAC
 from croniter import croniter
+from io import BytesIO
 
 logging.basicConfig(level=logging.INFO)
 
@@ -88,6 +93,9 @@ OPENWEATHER_LAT = os.getenv('OPENWEATHER_LAT')
 OPENWEATHER_LON = os.getenv('OPENWEATHER_LON')
 OPENWEATHER_UNITS = os.getenv('OPENWEATHER_UNITS', 'metric')
 
+DEFAULT_CACHE_DIR = os.getenv('NEWS_READER_DEFAULT_CACHE_DIR', '/tmp')
+DEFAULT_CACHE_TTL = os.getenv('NEWS_READER_DEFAULT_CACHE_TTL', 3600)
+
 # RSS Feed configuration
 FEED_CONFIG = {
     'TITLE': 'title',
@@ -128,6 +136,7 @@ def check_and_create_link_path(source, link_path):
             logging.info(f"Created directory for link path: {directory}")
         except Exception as e:
             logging.error(f"Failed to create directory for link path '{directory}': {e}")
+            logging.error(traceback.format_exc())
             return False
 
     # Attempt to create a symbolic link
@@ -150,6 +159,7 @@ def check_and_create_link_path(source, link_path):
         return True
     except Exception as e:
         logging.error(f"Failed to copy '{source}' to '{link_path}': {e}")
+        logging.error(traceback.format_exc())
         return False
     
 def load_lexicon(file_path):
@@ -166,7 +176,74 @@ def load_lexicon(file_path):
             return json.load(file)
     except (FileNotFoundError, json.JSONDecodeError) as e:
         logging.error(f"Error loading lexicon file '{file_path}': {e}")
+        logging.error(traceback.format_exc())
         return {}
+
+def generate_hash(text: str) -> str:
+    """Generate SHA-256 hash for the given text."""
+    return hashlib.sha256(text.encode('utf-8')).hexdigest()
+
+def get_cache_dir() -> Path:
+    """Get the cache directory path."""
+    cache_dir = os.getenv("NEWS_READER_CACHE_DIR", DEFAULT_CACHE_DIR)
+    if cache_dir.lower() == "none":
+        return None
+    return Path(cache_dir)
+
+def is_cache_enabled() -> bool:
+    """Check whether caching is enabled."""
+    return get_cache_dir() is not None
+
+def cache_audio(hash_value: str, data: bytes, output_format: str) -> Path:
+    """Cache the audio data using the hash value as filename."""
+    cache_dir = get_cache_dir()
+    if cache_dir is None:
+        return None
+    
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_file = cache_dir / f"{hash_value}.{output_format}"
+    with open(cache_file, "wb") as file:
+        file.write(data)
+    return cache_file
+
+def get_cached_audio(hash_value: str, output_format: str) -> AudioSegment:
+    """Retrieve cached audio if available.
+
+    Args:
+        hash_value (str): The hash value used to store the audio.
+
+    Returns:
+        AudioSegment: The cached audio segment if available, otherwise None.
+    """
+    cache_dir = get_cache_dir()
+    if cache_dir is None:
+        return None
+    
+    cache_file = cache_dir / f"{hash_value}.{output_format}"
+    if cache_file.exists():
+        # Update the access time
+        cache_file.touch()
+        
+        # Load the cached audio file into an AudioSegment
+        audio = AudioSegment.from_file(cache_file, format=output_format)
+        return audio
+    return None
+
+def cleanup_cache():
+    """Clean up cache by removing files not used within the TTL period."""
+    cache_dir = get_cache_dir()
+    if cache_dir is None or not cache_dir.exists():
+        return
+    
+    ttl_seconds = int(os.getenv("NEWS_READER_CACHE_TTL", DEFAULT_CACHE_TTL))
+    ttl_delta = timedelta(seconds=ttl_seconds)
+    now = datetime.now()
+
+    for cache_file in cache_dir.glob("*.audio"):
+        last_access_time = datetime.fromtimestamp(cache_file.stat().st_atime)
+        if now - last_access_time > ttl_delta:
+            cache_file.unlink()
+            logging.info(f"Deleted cached file: {cache_file}")
 
 def apply_lexicon(text, lexicon):
     """Apply lexicon translations to the given text.
@@ -197,6 +274,7 @@ def apply_lexicon(text, lexicon):
             text = re.sub(pattern, translation, text)
         except re.error as e:
             logging.error(f"Regex error with pattern '{pattern}': {e}")
+            logging.error(traceback.format_exc())
 
     return text
 
@@ -212,6 +290,78 @@ def process_text_for_tts(text):
     """
     lexicon = load_lexicon(LEXICON_JSON_PATH)
     return apply_lexicon(text, lexicon)
+
+def set_synchronized_lyrics_metadata(audio_path, timestamps, lyrics_text):
+    """
+    Sets the synchronized lyrics metadata for an audio file using the timestamps and lyrics text.
+
+    Args:
+        audio_path (str): Path to the audio file.
+        timestamps (list): List of timestamps for each segment in format [MM:SS.ss].
+        lyrics_text (str): The lyrics text to sync with the timestamps.
+    """
+    try:
+        # Convert PosixPath to string if necessary
+        audio_path = str(audio_path)
+
+        if audio_path.endswith('.mp3'):
+            # For MP3 files
+            audio = ID3(audio_path)
+            sync_lyrics = [f"[{timestamp}]{text}" for timestamp, text in zip(timestamps, lyrics_text)]
+            audio.add(USLT(encoding=3, desc="SynchronizedLyricsText", text="\n".join(sync_lyrics)))
+            audio.add(USLT(encoding=3, desc="SynchronizedLyricsType", text="2"))
+            audio.add(USLT(encoding=3, desc="SynchronizedLyricsDescription", text="Script as read by newsreader"))
+            audio.save()
+        elif audio_path.endswith('.flac'):
+            # For FLAC files, we'll use Vorbis comments
+            audio = FLAC(audio_path)
+            sync_lyrics = [f"[{timestamp}]{text}" for timestamp, text in zip(timestamps, lyrics_text)]
+            audio['SynchronizedLyricsText'] = "\n".join(sync_lyrics)
+            audio['SynchronizedLyricsType'] = "2"
+            audio['SynchronizedLyricsDescription'] = "Script as read by newsreader"
+            audio.save()
+        else:
+            logging.warning(f"Unsupported file format for synchronized lyrics: {audio_path}")
+
+        logging.info(f"Synchronized lyrics metadata successfully updated for {audio_path}")
+    except Exception as e:
+        logging.error(f"An error occurred while updating synchronized lyrics metadata: {e}")
+        logging.error(traceback.format_exc())
+
+def generate_mixed_audio_and_track_timestamps(sfx_file, speech_audio, timing, start_offset):
+    """Generate the mixed audio segment based on the provided timing, tracking timestamps."""
+    sfx_audio = AudioSegment.from_file(sfx_file)
+    
+    logging.info(f"Mixing audio with timing: {timing}")
+
+    if timing.lower() != "none":
+        timing_offset = int(timing)
+        sfx_duration = len(sfx_audio)
+        speech_duration = len(speech_audio)
+        if timing_offset > sfx_duration:
+            # Add silence after SFX for the timing offset
+            padding = timing_offset - sfx_duration
+            combined_audio = sfx_audio + AudioSegment.silent(duration=padding) + speech_audio
+            speech_start_time = start_offset + sfx_duration + padding
+        else:
+            # Overlay speech onto SFX at the specified timing offset
+            combined_audio = sfx_audio.overlay(speech_audio, position=timing_offset)
+            speech_start_time = start_offset + timing_offset
+            if timing_offset + speech_duration > sfx_duration:
+                # Add remaining speech to the end if extends beyond SFX
+                combined_audio = combined_audio + speech_audio[sfx_duration - timing_offset:]
+    else:
+        logging.info("No overlay timing specified, appending speech to SFX")
+        combined_audio = sfx_audio + speech_audio
+        speech_start_time = start_offset + len(sfx_audio)
+
+    return combined_audio, speech_start_time / 1000  # Convert to seconds for SynLyrics
+
+def format_timestamp(seconds):
+    """Convert float seconds to a timestamp in [MM:SS.ss] format."""
+    minutes = int(seconds // 60)
+    remainder_seconds = seconds % 60
+    return f"{minutes:02d}:{remainder_seconds:05.2f}"
 
 def parse_rss_feed(feed_url, config):
     """Parses the RSS feed, filtering out ignored articles using regex patterns 
@@ -315,6 +465,7 @@ def fetch_bom_data(product_id):
 
     except Exception as e:
         logging.error(f"Failed to fetch BOM data: {e}")
+        logging.error(traceback.format_exc())
         return None
 
 def fetch_openweather_data(api_key, lat, lon, units, weather_json_path):
@@ -332,6 +483,7 @@ def fetch_openweather_data(api_key, lat, lon, units, weather_json_path):
     """
     if not api_key or not lat or not lon:
         logging.error("OpenWeather API key, latitude, or longitude not set.")
+        logging.error(traceback.format_exc())
         return None
 
     weather_file = Path(weather_json_path)
@@ -370,6 +522,7 @@ def fetch_openweather_data(api_key, lat, lon, units, weather_json_path):
 
     except requests.RequestException as e:
         logging.error(f"Failed to fetch weather data from OpenWeatherMap: {e}")
+        logging.error(traceback.format_exc())
         return None
 
 def convert_wind_speed(speed, units):
@@ -423,6 +576,7 @@ def set_audio_metadata(file_path, metadata):
         logging.info(f"Metadata successfully updated for {file_path}")
     except mutagen.MutagenError as e:
         logging.error(f"Error opening file '{file_path}' for metadata update: {e}")
+        logging.error(traceback.format_exc())
 
 def format_datetime(dt):
     """Format datetime to a full and human-readable format."""
@@ -608,7 +762,7 @@ def clean_script(script):
     """Cleans the script by removing lines with formatting markers."""
     cleaned_lines = []
     for line in script.splitlines():
-        if line.strip() not in ["```plaintext", "```"]:
+        if line.strip() not in ["```plaintext", "```markdown", "```"]:
             cleaned_lines.append(line)
     return "\n".join(cleaned_lines)    
 
@@ -623,8 +777,15 @@ def generate_speech(news_script_chunk, api_key, voice, quality, output_format):
         output_format (str): Desired output audio format.
 
     Returns:
-        str: Path to the temporary file containing the generated audio.
+        AudioSegment: The generated audio segment.
     """
+    text_hash = generate_hash(news_script_chunk)
+    cached_audio = get_cached_audio(text_hash, output_format)
+    
+    if cached_audio:
+        logging.info(f"Using cached audio for hash: {text_hash}")
+        return cached_audio
+    
     client = OpenAI(api_key=api_key)
     
     processed_text = process_text_for_tts(news_script_chunk)
@@ -637,18 +798,14 @@ def generate_speech(news_script_chunk, api_key, voice, quality, output_format):
             input=processed_text,
             response_format=output_format
         )
-
-        with NamedTemporaryFile(delete=False, suffix=f".{output_format}") as temp_audio_file:
-            temp_audio_file.write(response.content)
-            temp_audio_file_path = temp_audio_file.name
-
-        # Normalize the audio
-        audio = AudioSegment.from_file(temp_audio_file_path)
-        normalized_audio = audio.apply_gain(-audio.max_dBFS)  # Normalize to 0 dBFS
-
-        normalized_audio.export(temp_audio_file_path, format=output_format)
         
-        return temp_audio_file_path
+        # Create a new AudioSegment object from the returned Audio
+        audio = AudioSegment.from_file(BytesIO(response.content), format=output_format)
+
+        normalized_audio = audio.apply_gain(-audio.max_dBFS)  # Normalize to 0 dBFS
+        cache_audio(text_hash, normalized_audio.export(format=output_format).read(), output_format)
+        
+        return normalized_audio
     except openai.OpenAIError as e:
         raise openai.OpenAIError(f"An error occurred with the OpenAI TTS API: {e}")
 
@@ -772,6 +929,95 @@ def generate_mixed_audio(sfx_file, speech_file, timing):
 
     return combined_audio
 
+def generate_audio_fingerprint_from_object(output_file_path):
+    """Generate an audio fingerprint from an audio object using Chromaprint and AcoustID.
+    
+    Args:
+        output_file_path (str): The path to the audio file.
+    
+    Returns:
+        tuple: (duration, fingerprint string, bitrate, file_format)
+        
+    Raises:
+        RuntimeError: If the fingerprinting process fails.
+    """
+    try:        
+        # Generate fingerprint and duration
+        duration, fingerprint = acoustid.fingerprint_file(output_file_path)
+        
+        # Use mutagen to extract metadata (bitrate)
+        audio_file = mutagen.File(output_file_path)
+        if audio_file is None:
+            raise RuntimeError('Unsupported file format')
+
+        bitrate = getattr(audio_file.info, 'bitrate', None) // 1000 if getattr(audio_file.info, 'bitrate', None) else None
+
+        return duration, fingerprint, bitrate
+    except Exception as e:
+        raise RuntimeError(f"Failed to generate fingerprint: {e}")
+
+def submit_to_musicbrainz(output_file_path, output_format, metadata, user_key, application_key):
+    """Submit the audio fingerprint along with metadata to MusicBrainz.
+    
+    Args:
+        output_file_path (str): The audio file path.
+        output_format (str): The format of the audio file.
+        metadata (dict): Metadata dictionary including artist, title, etc.
+        user_key (str): Your AcoustID user API key.
+        application_key (str): Your AcoustID application API key
+    
+    Returns:
+        dict: JSON response from MusicBrainz.
+        
+    Raises:
+        RuntimeError: If the submission process fails.
+    """
+    # Generate fingerprint and retrieve accurate bitrate and file format
+    try:
+        duration, fingerprint, bitrate = generate_audio_fingerprint_from_object(output_file_path)
+    except Exception as e:
+        raise RuntimeError(f"Failed to generate fingerprint: {e}")
+    
+    logging.info(f"Duration: {duration}, Bitrate: {bitrate} kbps")
+
+    # Mapping existing metadata to AcoustID valid metadata
+    data = {
+        'client': application_key,  # Your application API key
+        'user': user_key,
+        'duration.0': int(duration),  # Ensure duration is an integer
+        'fingerprint.0': fingerprint.decode('utf-8') if isinstance(fingerprint, bytes) else fingerprint,
+        'track.0': metadata.get('title'),
+        'artist.0': metadata.get('artist'),
+        'album.0': metadata.get('album'),
+        'albumartist.0': metadata.get('artist'),  # Assuming the artist as the album artist
+        'year.0': metadata.get('year'),
+        'trackno.0': metadata.get('tracknumber'),
+        'discno.0': metadata.get('discnumber'),
+        'bitrate.0': str(bitrate),
+        'fileformat.0': output_format,
+        'format': 'json'
+    }
+
+    # Remove None values from data
+    data = {k: v for k, v in data.items() if v is not None}
+
+    try:
+        response = requests.get('https://api.acoustid.org/v2/submit', params=data)
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as e:
+        # Pretty print the submission payload for debugging
+        logging.error(f"Failed to submit to MusicBrainz: {e}")
+        logging.error(f"Response: {response.text}")
+        logging.error(f"data: {data}")
+        # If response has a json encoded error message, raise that
+        try:
+            error_message = response.json().get('error', {}).get('message')
+            if error_message:
+                raise RuntimeError(error_message)
+        except ValueError:
+            raise RuntimeError(response.text)
+
 def generate_news_audio():
     """Function to handle the news generation and audio output."""
     feed_url = os.getenv('NEWS_READER_RSS', 'https://raw.githubusercontent.com/troykelly/live-news-break/main/demo.xml')
@@ -791,6 +1037,7 @@ def generate_news_audio():
         prompt_instructions = read_prompt_file(prompt_file_path)
     except Exception as e:
         logging.error(f"Error reading prompt file: {e}")
+        logging.error(traceback.format_exc())
         return
 
     timezone_str = os.getenv('NEWS_READER_TIMEZONE', 'UTC')
@@ -798,6 +1045,7 @@ def generate_news_audio():
         timezone = pytz.timezone(timezone_str)
     except Exception as e:
         logging.error(f"Invalid timezone '{timezone_str}', defaulting to UTC")
+        logging.error(traceback.format_exc())
         timezone = pytz.UTC
 
     # Handle timeshift
@@ -871,7 +1119,7 @@ def generate_news_audio():
         raise PermissionError(f"The output directory '{output_dir}' is not writable.")
 
     final_audio = AudioSegment.empty()
-    speech_audio_files = []
+    # speech_audio_files = []
     current_index = 0
     placeholder_to_key = {
         INTRO_PLACEHOLDER: "INTRO",
@@ -880,9 +1128,12 @@ def generate_news_audio():
         OUTRO_PLACEHOLDER: "OUTRO"
     }
 
+    total_elapsed_time = 0  # Track cumulative time for timestamps
+    timestamps = []
+    lyrics_text = []
+
     article_start_time = None
     article_end_time = None
-    total_duration = 0
 
     while current_index < len(script_sections):
         section = script_sections[current_index]
@@ -894,42 +1145,44 @@ def generate_news_audio():
             if sfx_file:
                 if current_index + 1 < len(script_sections):
                     speech_text = script_sections[current_index + 1]
-                    speech_audio_file = generate_speech(speech_text, openai_api_key, tts_voice, tts_quality, output_format)
-                    mixed_audio = generate_mixed_audio(sfx_file, speech_audio_file, timing_value)
+                    speech_audio = generate_speech(speech_text, openai_api_key, tts_voice, tts_quality, output_format)
+                    mixed_audio, speech_start_time = generate_mixed_audio_and_track_timestamps(sfx_file, speech_audio, timing_value, total_elapsed_time * 1000)
+                                        
                     final_audio += mixed_audio
-                    speech_audio_files.append(speech_audio_file)
                     current_index += 2
-
+                    
                     if sfx_key == "OUTRO" and article_end_time is None:
-                        article_end_time = total_duration
+                        article_end_time = total_elapsed_time * 1000
                         logging.info(f"Music bed to end at {article_end_time}.")
                         
                     if sfx_key == "FIRST" and article_start_time is None:
                         timing_offset = 0
                         if timing_value.lower() != "none":
                             timing_offset = int(timing_value)
-                        article_start_time = total_duration + timing_offset
+                        article_start_time = (total_elapsed_time * 1000) + timing_offset
                         logging.info(f"Music bed to start at {article_start_time}.")
 
-                    total_duration += len(mixed_audio)
+                    timestamps.append(format_timestamp(speech_start_time))
+                    lyrics_text.append(speech_text)
+                    total_elapsed_time += len(mixed_audio) / 1000  # Update elapsed time (in seconds)
                 else:
                     raise ValueError("SFX placeholder found at the end without subsequent text.")
             else:
                 logging.warning(f"No SFX file for {section}")
-                current_index += 1
+                current_index += 1                
         else:
-            speech_audio_file = generate_speech(section, openai_api_key, tts_voice, tts_quality, output_format)
-            speech_audio = AudioSegment.from_file(speech_audio_file)
+            speech_audio = generate_speech(section, openai_api_key, tts_voice, tts_quality, output_format)
+                        
             final_audio += speech_audio
-            speech_audio_files.append(speech_audio_file)
             current_index += 1
-
+            
             if article_start_time is None:
-                article_start_time = total_duration
+                article_start_time = total_elapsed_time * 1000
 
-            total_duration += len(speech_audio)
-            article_end_time = total_duration
-
+            total_elapsed_time += len(speech_audio) / 1000  # Update elapsed time (in seconds)
+            timestamps.append(format_timestamp(total_elapsed_time))
+            lyrics_text.append(section)
+            
     # Post-process to add music bed
     bed_file = audio_files.get("BED", None)
     if bed_file and article_start_time is not None and article_end_time is not None:
@@ -958,29 +1211,38 @@ def generate_news_audio():
                 looped_bed_audio = looped_bed_audio.fade_out(bed_fadeout)
             # Overlay the bed audio starting from the adjusted article start time
             combined_audio = final_audio.overlay(looped_bed_audio, position=adjusted_article_start_time)
-            final_audio = combined_audio
+            final_audio = combined_audio            
 
     final_audio.export(output_file_path, format=output_format)
-    
+
+    # Human readable date for metadata
     metadata_human_date = current_time.strftime('%A, %B %d, %Y at %I:%M %p %Z')
+    
+    # The release time of the news read (time plus time shift if it's set) as YYYY-MM-DDThh:mm:ssZ
+    metadata_release_time = (current_time + timeshift_delta).strftime('%Y-%m-%dT%H:%M:%SZ')
 
     # Set metadata for the generated audio file
     metadata = {
         'title': f"{station_name} News Broadcast for {metadata_human_date}",
+        'subtitle': f"Read by {reader_name}",
         'artist': f"{reader_name}",
         'album': 'News Bulletin',
         'date': datetime.now().strftime('%Y-%m-%d'),
+        'releasetime': metadata_release_time,
         'genre': 'News',
-        'comments': news_script,
+        'comment': news_script,
         'discnumber': '1',
         'tracknumber': '1',
         'language': 'en',
         'publisher': f"{station_name} News",
         'year': datetime.now().strftime('%Y'),
-        'encodedby': 'News Reader',
+        'encodedby': 'https://github.com/troykelly/live-news-break',
         'source': f"RSS: {feed_url}",
+        'copyright': f"Copyright © {station_name} {datetime.now().strftime('%Y')}",
+        'publisherurl': 'https://github.com/troykelly/live-news-break',
     }
     set_audio_metadata(output_file_path, metadata)
+    set_synchronized_lyrics_metadata(output_file_path, timestamps, lyrics_text)  # Set SynLyrics metadata
     logging.info(f"News audio generated and saved to {output_file_path}")
 
     # Handle the NEWS_READER_OUTPUT_LINK environment variable
@@ -991,6 +1253,22 @@ def generate_news_audio():
             logging.info(f"Successfully created link or copied file to '{output_link}'")
         else:
             logging.error(f"Failed to create link or copy file to '{output_link}'")
+            logging.error(traceback.format_exc())
+
+    # Check for AcoustID user and application keys
+    acoustid_user_key = os.getenv('ACOUSTID_USER_KEY', '').strip()
+    acoustid_application_key = os.getenv('ACOUSTID_APPLICATION_KEY', '').strip()
+
+    if acoustid_user_key and acoustid_application_key:
+        try:
+            # Call the submit_to_musicbrainz function
+            response = submit_to_musicbrainz(output_file_path, output_format, metadata, acoustid_user_key, acoustid_application_key)
+            logging.info(f"Successfully submitted to MusicBrainz: {response}")
+        except Exception as e:
+            logging.error(f"Failed to submit to MusicBrainz: {e}")
+            logging.error(traceback.format_exc())
+    else:
+        logging.warning("AcoustID user key or application key is not defined. Skipping submission.")
 
 def main():
     """Main function that fetches, parses, and processes the RSS feed into audio."""
@@ -999,6 +1277,7 @@ def main():
     if cron_exp:
         if not validate_cron(cron_exp):
             logging.error(f"Invalid cron expression '{cron_exp}' in 'NEWS_READER_CRON' environment variable.")
+            logging.error(traceback.format_exc())
             return
 
         while True:
@@ -1014,12 +1293,14 @@ def main():
                 generate_news_audio()
             except Exception as e:
                 logging.error(f"An error occurred during scheduled news generation: {e}")
+                logging.error(traceback.format_exc())
 
     else:
         try:
             generate_news_audio()
         except Exception as e:
             logging.error(f"An error occurred during news generation: {e}")
+            logging.error(traceback.format_exc())
 
 if __name__ == '__main__':
     main()
