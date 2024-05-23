@@ -25,6 +25,8 @@ from mutagen.easyid3 import EasyID3
 from mutagen.flac import FLAC
 from croniter import croniter
 from io import BytesIO
+from typing import List
+
 
 logging.basicConfig(level=logging.INFO)
 
@@ -95,6 +97,9 @@ OPENWEATHER_UNITS = os.getenv('OPENWEATHER_UNITS', 'metric')
 
 DEFAULT_CACHE_DIR = os.getenv('NEWS_READER_DEFAULT_CACHE_DIR', '/tmp')
 DEFAULT_CACHE_TTL = os.getenv('NEWS_READER_DEFAULT_CACHE_TTL', 3600)
+
+# ElevenLabs Variable configuration
+ELEVENLABS_API_KEY = os.getenv('ELEVENLABS_API_KEY')
 
 # RSS Feed configuration
 FEED_CONFIG = {
@@ -766,49 +771,6 @@ def clean_script(script):
             cleaned_lines.append(line)
     return "\n".join(cleaned_lines)    
 
-def generate_speech(news_script_chunk, api_key, voice, quality, output_format):
-    """Generates spoken audio from the given text script chunk using OpenAI's TTS API.
-    
-    Args:
-        news_script_chunk (str): News script chunk to be converted to audio.
-        api_key (str): OpenAI API key.
-        voice (str): Chosen voice for the TTS.
-        quality (str): Chosen quality for the TTS (e.g. 'tts-1' or 'tts-1-hd').
-        output_format (str): Desired output audio format.
-
-    Returns:
-        AudioSegment: The generated audio segment.
-    """
-    text_hash = generate_hash(news_script_chunk)
-    cached_audio = get_cached_audio(text_hash, output_format)
-    
-    if cached_audio:
-        logging.info(f"Using cached audio for hash: {text_hash}")
-        return cached_audio
-    
-    client = OpenAI(api_key=api_key)
-    
-    processed_text = process_text_for_tts(news_script_chunk)
-    logging.info(f"Processed text for TTS: {processed_text}")
-
-    try:
-        response = client.audio.speech.create(
-            model=quality,
-            voice=voice,
-            input=processed_text,
-            response_format=output_format
-        )
-        
-        # Create a new AudioSegment object from the returned Audio
-        audio = AudioSegment.from_file(BytesIO(response.content), format=output_format)
-
-        normalized_audio = audio.apply_gain(-audio.max_dBFS)  # Normalize to 0 dBFS
-        cache_audio(text_hash, normalized_audio.export(format=output_format).read(), output_format)
-        
-        return normalized_audio
-    except openai.OpenAIError as e:
-        raise openai.OpenAIError(f"An error occurred with the OpenAI TTS API: {e}")
-
 def read_prompt_file(file_path):
     """Reads the contents of a prompt file with error handling.
 
@@ -1018,13 +980,174 @@ def submit_to_musicbrainz(output_file_path, output_format, metadata, user_key, a
         except ValueError:
             raise RuntimeError(response.text)
 
+def openai_segments_to_speech(
+    segments: List[str], 
+    api_key: str, 
+    voice: str, 
+    model: str, 
+    voice_settings: dict = {},
+) -> List[AudioSegment]:
+    """Generate speech using OpenAI API.
+
+    Args:
+        segments (list of str): The phrases to be converted to speech.
+        api_key (str): OpenAI API key.
+        voice (str): Chosen voice for the TTS.
+        model (str): Model version for the TTS.
+        voice_settings (dict): Voice settings for the TTS.
+
+    Returns:
+        list of AudioSegment: Ordered list of `AudioSegment` objects representing the converted phrases.
+
+    Raises:
+        Exception: If the API request fails.
+    """    
+    audio_segments: List[AudioSegment] = []
+    previous_request_ids: List[str] = []
+
+    openai_client = OpenAI(api_key=api_key)    
+    
+    for i, segment in enumerate(segments):
+        is_first_segment = i == 0
+        is_last_segment = i == len(segments) - 1
+        
+        response = openai_client.audio.speech.create(
+            model=model,
+            voice=voice,
+            input=segment,
+            response_format='flac'
+        )
+        logging.info(f"Successfully converted segment {i + 1}/{len(segments)}")
+        audio_segment = AudioSegment.from_file(BytesIO(response.content))
+        normalized_audio = audio_segment.apply_gain(-audio_segment.max_dBFS)
+        audio_segments.append(normalized_audio)
+    
+    return audio_segments
+
+def elevenlabs_segments_to_speech(
+    segments: List[str], 
+    api_key: str, 
+    voice: str, 
+    model: str, 
+    voice_settings: dict = {},
+) -> List[AudioSegment]:
+    """Generate speech using ElevenLabs API.
+
+    Args:
+        segments (list of str): The phrases to be converted to speech.
+        api_key (str): ElevenLabs API key.
+        voice (str): Chosen voice for the TTS.
+        model (str): Model version for the TTS.
+        voice_settings (dict): Voice settings for the TTS.
+
+    Returns:
+        list of AudioSegment: Ordered list of `AudioSegment` objects representing the converted phrases.
+
+    Raises:
+        Exception: If the API request fails.
+    """
+    api_url = "https://api.elevenlabs.io"
+    api_version = "v1"
+    api_endpoints = {
+        "voices": f"{api_url}/{api_version}/voices",
+        "generate": f"{api_url}/{api_version}/generate"
+    }
+    
+    api_headers = {
+        "Accept": "application/json",
+        "xi-api-key": api_key,
+        "Content-Type": "application/json",
+    }
+    
+    try:
+        # Get list of voices
+        voices_response = requests.get(api_endpoints["voices"], headers=api_headers)
+        voices_response.raise_for_status()
+        voices_data = voices_response.json()
+        elevenlabs_voices = voices_data['voices']
+    except requests.RequestException as e:
+        logging.error(f"Failed to fetch data from ElevenLabs: {e}")
+        logging.error(traceback.format_exc())
+        return None
+
+    # Find the voice_id for the specified voice name
+    voice_id = next((v['voice_id'] for v in elevenlabs_voices if v['name'].lower() == voice.lower()), None)
+    if not voice_id:
+        raise ValueError(f"The specified voice '{voice}' does not exist in ElevenLabs.")
+    
+    audio_segments: List[AudioSegment] = []
+    previous_request_ids: List[str] = []
+    
+    for i, segment in enumerate(segments):
+        is_first_segment = i == 0
+        is_last_segment = i == len(segments) - 1
+        response = requests.post(
+            f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream",
+            json={
+                "text": segment,
+                "model_id": model,
+                "output_format": 'pcm_44100',
+                # A maximum of three next or previous history item ids can be send
+                "previous_request_ids": previous_request_ids[-3:],
+                "previous_text": None if is_first_segment else " ".join(segments[:i]),
+                "next_text": None if is_last_segment else " ".join(segments[i + 1:])
+            },
+            headers={"xi-api-key": api_key},
+        )
+
+        if response.status_code != 200:
+            raise RuntimeError(f"Error encountered, status: {response.status_code}, "
+                f"content: {response.text}")
+
+        logging.info(f"Successfully converted segment {i + 1}/{len(segments)}")
+        previous_request_ids.append(response.headers["request-id"])
+        audio_segment = AudioSegment.from_file(BytesIO(response.content))
+        normalized_audio = audio_segment.apply_gain(-audio_segment.max_dBFS)
+        audio_segments.append(normalized_audio)
+    
+    return audio_segments
+
+def generate_voice_options(provider_name):
+    """Generate voice options for a specific TTS provider from environment variables.
+
+    Args:
+        provider_name (str): The name of the TTS provider (e.g., 'ELEVENLABS').
+
+    Returns:
+        dict: A dictionary of voice options extracted from the environment variables.
+    """
+    voice_options = {}
+    env_prefix = f"{provider_name}_".upper()
+
+    for key, value in os.environ.items():
+        if key.startswith(env_prefix):
+            # Remove the provider prefix and convert to lower case
+            option_key = key[len(env_prefix):].lower()
+
+            # Convert "True" and "False" to boolean
+            if value.lower() == 'true':
+                option_value = True
+            elif value.lower() == 'false':
+                option_value = False
+            else:
+                # Attempt to convert to float or integer if possible, else leave as string
+                try:
+                    option_value = float(value) if '.' in value else int(value)
+                except ValueError:
+                    option_value = value
+
+            voice_options[option_key] = option_value
+
+    return voice_options
+
 def generate_news_audio():
     """Function to handle the news generation and audio output."""
     feed_url = os.getenv('NEWS_READER_RSS', 'https://raw.githubusercontent.com/troykelly/live-news-break/main/demo.xml')
     station_name = os.getenv('NEWS_READER_STATION_NAME', 'Live News 24')
     reader_name = os.getenv('NEWS_READER_READER_NAME', 'Burnie Housedown')
     tts_voice = os.getenv('NEWS_READER_TTS_VOICE', 'alloy')
-    tts_quality = os.getenv('NEWS_READER_TTS_QUALITY', 'tts-1')
+    tts_model = os.getenv('NEWS_READER_TTS_MODEL', 'tts-1')
+    tts_provider = os.getenv('NEWS_READER_TTS_PROVIDER', 'openai')
     output_format = os.getenv('NEWS_READER_OUTPUT_FORMAT', 'flac')
 
     openai_api_key = os.getenv('OPENAI_API_KEY')
@@ -1134,6 +1257,27 @@ def generate_news_audio():
 
     article_start_time = None
     article_end_time = None
+    
+    vo_segments_text: List[str] = []
+    
+    # Create the list of segments and generate them
+    for section in script_sections:
+        if not section in placeholder_to_key:
+            vo_segments_text.append(process_text_for_tts(section))
+
+    voice_provider_options = generate_voice_options(tts_provider)
+
+    try:
+        if tts_provider == "elevenlabs":
+            vo_segments = elevenlabs_segments_to_speech(vo_segments_text, ELEVENLABS_API_KEY, tts_voice, tts_model, voice_provider_options)
+        elif tts_provider == "openai":
+            vo_segments = openai_segments_to_speech(vo_segments_text, openai_api_key, tts_voice, tts_model, voice_provider_options)
+        else:
+            raise ValueError(f"Unsupported TTS provider: {tts_provider}")
+    except Exception as e:
+        raise Exception(f"An error occurred with {tts_provider} TTS: {e}")            
+            
+    current_speech_segment = 0
 
     while current_index < len(script_sections):
         section = script_sections[current_index]
@@ -1145,7 +1289,8 @@ def generate_news_audio():
             if sfx_file:
                 if current_index + 1 < len(script_sections):
                     speech_text = script_sections[current_index + 1]
-                    speech_audio = generate_speech(speech_text, openai_api_key, tts_voice, tts_quality, output_format)
+                    # speech_audio = generate_speech(speech_text, openai_api_key, tts_voice, tts_quality, output_format)
+                    speech_audio = vo_segments[current_speech_segment]
                     mixed_audio, speech_start_time = generate_mixed_audio_and_track_timestamps(sfx_file, speech_audio, timing_value, total_elapsed_time * 1000)
                                         
                     final_audio += mixed_audio
@@ -1171,8 +1316,9 @@ def generate_news_audio():
                 logging.warning(f"No SFX file for {section}")
                 current_index += 1                
         else:
-            speech_audio = generate_speech(section, openai_api_key, tts_voice, tts_quality, output_format)
-                        
+            # speech_audio = generate_speech(section, openai_api_key, tts_voice, tts_quality, output_format)
+            speech_audio = vo_segments[current_speech_segment]
+            
             final_audio += speech_audio
             current_index += 1
             
@@ -1182,6 +1328,8 @@ def generate_news_audio():
             total_elapsed_time += len(speech_audio) / 1000  # Update elapsed time (in seconds)
             timestamps.append(format_timestamp(total_elapsed_time))
             lyrics_text.append(section)
+            
+        current_speech_segment += 1
             
     # Post-process to add music bed
     bed_file = audio_files.get("BED", None)

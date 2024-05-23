@@ -35,28 +35,26 @@
 		"vscode": {
 			"extensions": [
 				"ms-python.python",
+				"ms-python.vscode-pylance",
 				"ms-python.debugpy",
 				"KevinRose.vsc-python-indent",
 				"njpwerner.autodocstring",
 				"GitHub.copilot",
 				"GitHub.copilot-chat",
-				"ZainChen.json"
+				"ZainChen.json",
+				"VisualStudioExptTeam.vscodeintellicode",
+				"VisualStudioExptTeam.vscodeintellicode-completions"
 			]
 		},
 	},
-
 	// Features to add to the dev container. More info: https://containers.dev/features.
 	// "features": {},
-
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
 	// "forwardPorts": [],
-
 	// Use 'postCreateCommand' to run commands after the container is created.
-	"postCreateCommand": "sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get -y install ffmpeg && pip3 install --user -r requirements.txt",
-
+	"postCreateCommand": "echo 'export PATH=$PATH:/home/vscode/.local/bin' >> /home/vscode/.bashrc && sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get -y install ffmpeg && pip3 install --user -r requirements.txt",
 	// Configure tool-specific properties.
 	// "customizations": {},
-
 	// Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
 	// "remoteUser": "root"
 }
