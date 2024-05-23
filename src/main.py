@@ -953,6 +953,31 @@ def generate_news_audio():
     timestamps = []
     lyrics_text = []
 
+    bed_file = audio_files.get("BED", None)
+    bed_offset = int(os.getenv(TIMINGS_ENV["BED"], 0) or 0)
+    bed_fadein = int(os.getenv(FADEIN_ENV["BED"], 0) or 0)
+    bed_fadeout = int(os.getenv(FADEOUT_ENV["BED"], 500) or 500)
+    bed_gain = float(os.getenv(GAIN_ENV["BED"], -15))
+
+    def apply_bed_audio(base_audio, duration_ms):
+        if bed_file:
+            bed_audio = AudioSegment.from_file(bed_file)
+            looped_bed_audio = AudioSegment.empty()
+            
+            while len(looped_bed_audio) < duration_ms:
+                looped_bed_audio += bed_audio
+                
+            looped_bed_audio = looped_bed_audio[:duration_ms].apply_gain(bed_gain)
+            
+            if bed_fadein > 0:
+                looped_bed_audio = looped_bed_audio.fade_in(bed_fadein)
+            if bed_fadeout > 0:
+                looped_bed_audio = looped_bed_audio.fade_out(bed_fadeout)
+                
+            return base_audio.overlay(looped_bed_audio, position=bed_offset)
+        
+        return base_audio
+
     while current_index < len(script_sections):
         section = script_sections[current_index]
         if section in placeholder_to_key:
@@ -965,6 +990,12 @@ def generate_news_audio():
                     speech_text = script_sections[current_index + 1]
                     speech_audio_file = generate_speech(speech_text, openai_api_key, tts_voice, tts_quality, output_format)
                     mixed_audio, speech_start_time = generate_mixed_audio_and_track_timestamps(sfx_file, speech_audio_file, timing_value, total_elapsed_time * 1000)
+                    
+                    # Only apply music bed for 'FIRST' and 'BREAK' and not for 'INTRO' or 'OUTRO'
+                    if sfx_key in ["FIRST", "BREAK"]:
+                        duration_ms = len(mixed_audio)
+                        mixed_audio = apply_bed_audio(mixed_audio, duration_ms)
+                    
                     final_audio += mixed_audio
                     speech_audio_files.append(speech_audio_file)
                     current_index += 2
@@ -980,6 +1011,10 @@ def generate_news_audio():
         else:
             speech_audio_file = generate_speech(section, openai_api_key, tts_voice, tts_quality, output_format)
             speech_audio = AudioSegment.from_file(speech_audio_file)
+            
+            # Apply the music bed duration is the length of the speech audio segment
+            speech_audio = apply_bed_audio(speech_audio, len(speech_audio))
+            
             final_audio += speech_audio
             speech_audio_files.append(speech_audio_file)
             current_index += 1
@@ -987,34 +1022,6 @@ def generate_news_audio():
             total_elapsed_time += len(speech_audio) / 1000  # Update elapsed time (in seconds)
             timestamps.append(format_timestamp(total_elapsed_time))
             lyrics_text.append(section)
-
-    # Post-process to add music bed
-    bed_file = audio_files.get("BED", None)
-    if bed_file:
-        bed_audio = AudioSegment.from_file(bed_file)
-        # Ensure fade values are converted to integers and have default fallback values if not set
-        bed_gain = float(os.getenv(GAIN_ENV["BED"], -15))
-        bed_fadein = int(os.getenv(FADEIN_ENV["BED"], 0) or 0)
-        bed_fadeout = int(os.getenv(FADEOUT_ENV["BED"], 500) or 500)
-        bed_offset = int(os.getenv(TIMINGS_ENV["BED"], 0) or 0)
-
-        if total_elapsed_time > 0:
-            bed_duration = total_elapsed_time * 1000  # Convert to milliseconds
-            looped_bed_audio = AudioSegment.empty()
-
-            while len(looped_bed_audio) < bed_duration:
-                looped_bed_audio += bed_audio
-
-            looped_bed_audio = looped_bed_audio[:bed_duration]
-            looped_bed_audio = looped_bed_audio.apply_gain(bed_gain)
-
-            if bed_fadein > 0:
-                looped_bed_audio = looped_bed_audio.fade_in(bed_fadein)
-            if bed_fadeout > 0:
-                looped_bed_audio = looped_bed_audio.fade_out(bed_fadeout)
-            # Overlay the bed audio to match the full duration of the combined audio
-            combined_audio = final_audio.overlay(looped_bed_audio, position=0)
-            final_audio = combined_audio
 
     final_audio.export(output_file_path, format=output_format)
 
