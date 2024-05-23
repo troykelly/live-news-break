@@ -771,56 +771,6 @@ def clean_script(script):
             cleaned_lines.append(line)
     return "\n".join(cleaned_lines)    
 
-# def generate_speech(news_script_chunk, api_key, tts_voice, model, output_format, provider="openai", voice_options=None):
-#     """Generates spoken audio from the given text script chunk using specified TTS provider.
-    
-#     Args:
-#         news_script_chunk (str): News script chunk to be converted to audio.
-#         api_key (str): API key for the chosen TTS provider.
-#         tts_voice (str): Chosen voice for the TTS.
-#         model (str): Chosen model/version for the TTS.
-#         output_format (str): Desired output audio format.
-#         provider (str): TTS provider (default is 'openai').
-#         voice_options (dict): Additional voice settings for specific TTS engines.
-#     Returns:
-#         AudioSegment: The generated audio segment.
-#     Raises:
-#         Exception: If an error occurs while generating speech.
-#     """
-#     text_hash = generate_hash(news_script_chunk)
-#     cached_audio = get_cached_audio(text_hash, output_format)
-    
-#     if cached_audio:
-#         logging.info(f"Using cached audio for hash: {text_hash}")
-#         return cached_audio
-    
-#     processed_text = process_text_for_tts(news_script_chunk)
-#     logging.info(f"Processed text for TTS: {processed_text}")
-#     try:
-#         if provider == "elevenlabs":
-#             # Prepare voice settings for ElevenLabs
-#             eleven_client = elevenlabs.Client(api_key)
-#             voice_settings = voice_options if voice_options else {}
-#             response = eleven_client.text_to_speech(processed_text, voice=tts_voice, model=model, **voice_settings)
-#             audio = AudioSegment.from_file(BytesIO(response), format=output_format)
-#         elif provider == "openai":
-#             # Generate speech with OpenAI
-#             openai_client = openai.OpenAI(api_key)
-#             response = openai_client.audio.speech.create(
-#                 model=model,
-#                 voice=tts_voice,
-#                 input=processed_text,
-#                 response_format=output_format
-#             )
-#             audio = AudioSegment.from_file(BytesIO(response.content), format=output_format)
-#         else:
-#             raise ValueError(f"Unsupported TTS provider: {provider}")
-#         normalized_audio = audio.apply_gain(-audio.max_dBFS)
-#         cache_audio(text_hash, normalized_audio.export(format=output_format).read(), output_format)
-#         return normalized_audio
-#     except Exception as e:
-#         raise Exception(f"An error occurred with {provider} TTS: {e}")
-
 def read_prompt_file(file_path):
     """Reads the contents of a prompt file with error handling.
 
