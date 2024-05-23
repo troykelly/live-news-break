@@ -232,12 +232,16 @@ def set_synchronized_lyrics_metadata(audio_path, timestamps, lyrics_text):
             audio = ID3(audio_path)
             sync_lyrics = [f"[{timestamp}]{text}" for timestamp, text in zip(timestamps, lyrics_text)]
             audio.add(USLT(encoding=3, desc="SynchronizedLyricsText", text="\n".join(sync_lyrics)))
+            audio.add(USLT(encoding=3, desc="SynchronizedLyricsType", text="2"))
+            audio.add(USLT(encoding=3, desc="SynchronizedLyricsDescription", text="Script as read by newsreader"))
             audio.save()
         elif audio_path.endswith('.flac'):
             # For FLAC files, we'll use Vorbis comments
             audio = FLAC(audio_path)
             sync_lyrics = [f"[{timestamp}]{text}" for timestamp, text in zip(timestamps, lyrics_text)]
             audio['SynchronizedLyricsText'] = "\n".join(sync_lyrics)
+            audio['SynchronizedLyricsType'] = "2"
+            audio['SynchronizedLyricsDescription'] = "Script as read by newsreader"
             audio.save()
         else:
             logging.warning(f"Unsupported file format for synchronized lyrics: {audio_path}")
