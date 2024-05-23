@@ -331,6 +331,55 @@ The script will fetch news articles, generate a news script, convert the script 
 
 The script uses various environment variables for configuration. These include API keys, file paths for audio clips, text-to-speech settings, and more. Refer to the example environment configuration above.
 
+### MusicBrainz AcoustID Integration
+
+#### What is AcoustID?
+
+AcoustID is a service that uses audio fingerprints to identify music tracks. By generating and submitting unique fingerprints of your audio files, you can match them with existing records in the AcoustID database, which is often linked to MusicBrainz, a comprehensive music database.
+
+#### Why is it There?
+
+The integration with AcoustID and MusicBrainz allows your generated news audio files to be identified uniquely and linked to metadata in a public database. This can help in cataloging, retrieving metadata, and providing richer information about your audio files.
+
+#### Configuration
+
+To enable this integration, you need to set the following environment variables:
+
+- **`ACOUSTID_USER_KEY`**: Your user key for the AcoustID service.
+  - **Example:** `your_acoustid_user_key`
+  
+- **`ACOUSTID_APPLICATION_KEY`**: Your application key for the AcoustID service.
+  - **Example:** `your_acoustid_application_key`
+
+These keys are required to authenticate your submissions to the AcoustID and MusicBrainz services.
+
+#### Example Configuration
+
+Add the following lines to your `.env` file:
+
+```dotenv
+ACOUSTID_USER_KEY=your_acoustid_user_key
+ACOUSTID_APPLICATION_KEY=your_acoustid_application_key
+```
+
+#### How to Obtain AcoustID Keys
+
+To get your AcoustID keys:
+
+1. **User Key**:
+   - Sign up for an account on the [AcoustID website](https://acoustid.org/).
+   - Navigate to your account settings and retrieve your user API key.
+
+2. **Application Key**:
+   - Register your application on the [AcoustID developer portal](https://acoustid.org/new-application).
+   - Once registered, you will be provided with an application API key.
+
+#### Usage
+
+Once configured, the script will automatically generate an audio fingerprint for each generated news audio file and submit it to the AcoustID service. If the keys are not set, the submission will be skipped, and a warning will be logged.
+
+This feature helps ensure that your audio files are uniquely identifiable and can be associated with rich metadata in the future.
+
 ### Logging
 
 The script includes logging statements to help you monitor the process and diagnose issues. Logs will be output to the console.
