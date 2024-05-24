@@ -23,4 +23,6 @@ RUN chown -R newsreader:newsreader /app
 # Switch to non-root user
 USER newsreader
 
+ENV PYTHONPATH=./src
+
 CMD ["python", "src/main.py"]
