@@ -1087,6 +1087,22 @@ def generate_voice_options(provider_name):
 
     return voice_options
 
+def prepare_filename(file_key: str, output_format: str, timestamp: datetime) -> str:
+    """
+    Returns the filename for the audio file based on the key and output format.
+    
+    Args:
+        file_key (str): The key for the audio file.
+        output_format (str): The output format for the audio file.
+        timestamp (datetime): The datetime object for the current time.
+    """
+    file_key = file_key.replace('%EXT%', output_format)
+    file_key = file_key.replace('%Y%', timestamp.strftime('%Y')).replace(
+        '%m%', timestamp.strftime('%m')).replace('%d%', timestamp.strftime('%d')).replace(
+        '%H%', timestamp.strftime('%H')).replace('%M%', timestamp.strftime('%M')).replace(
+        '%S%', timestamp.strftime('%S'))
+    return file_key
+
 def set_audio_metadata_from_bytesio(audio_bytes, metadata, audio_format):
     """
     Sets metadata for an audio file using a BytesIO stream.
@@ -1419,7 +1435,8 @@ def generate_news_audio():
 
     # Upload to AzuraCast
     azuracast_client = AzuraCastClient()
-    azuracast_client.integrate_azuracast_with_audio_segment(AudioSegment.from_file(BytesIO(output_file_content), format=output_format), output_format)        
+    azuracast_formatted_filename = prepare_filename(azuracast_client.filename_template, output_format, current_time)
+    azuracast_client.upload_file(output_bytes_io.getvalue(), azuracast_formatted_filename)
 
     # Initialize S3 Client for uploading the audio file
     s3_client = S3Client()
@@ -1429,9 +1446,9 @@ def generate_news_audio():
     output_mime_type = f"audio/{output_format_extension}"
 
     # Use format_filename method for generating the file name
-    formatted_filename = s3_client.format_filename(s3_client.filename_template, output_format_extension)
+    s3_formatted_filename = prepare_filename(s3_client.filename_template, output_format_extension, current_time)
 
-    s3_success = s3_client.upload_file(output_bytes_io.getvalue(), formatted_filename, output_mime_type)
+    s3_success = s3_client.upload_file(output_bytes_io.getvalue(), s3_formatted_filename, output_mime_type)
 
     if s3_success:
         logging.info(f"News audio successfully uploaded to S3.")

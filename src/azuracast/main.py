@@ -21,8 +21,8 @@ class AzuraCastClient:
         self.api_key = os.getenv('AZURACAST_API_KEY')
         self.station_id = os.getenv('AZURACAST_STATIONID')
         self.path = os.getenv('AZURACAST_PATH')
-        self.filename = os.getenv('AZURACAST_FILENAME')
         self.playlist_name = os.getenv('AZURACAST_PLAYLIST')
+        self.filename_template = os.getenv('AZURACAST_FILENAME', 'news.%EXT%')
 
     def _perform_request(self, method, endpoint, headers=None, data=None, json=None):
         """
@@ -48,45 +48,43 @@ class AzuraCastClient:
         response.raise_for_status()
         return response.json()
 
-    def _format_filename(self, filename):
+    def format_filename(self, template, extension):
         """
-        Formats the filename by substituting placeholders with the current date and time values.
+        Formats the filename by substituting placeholders with the current date and time values and extension.
         
         Args:
-            filename (str): The filename template with placeholders.
+            template (str): The filename template with placeholders.
+            extension (str): The extension of the file to be included in the filename.
         
         Returns:
             str: The formatted filename.
         """
         current_time = datetime.now()
-        formatted_filename = filename.replace('%Y%', current_time.strftime('%Y'))
-        formatted_filename = formatted_filename.replace('%m%', current_time.strftime('%m'))
-        formatted_filename = formatted_filename.replace('%d%', current_time.strftime('%d'))
-        formatted_filename = formatted_filename.replace('%H%', current_time.strftime('%H'))
-        formatted_filename = formatted_filename.replace('%M%', current_time.strftime('%M'))
-        formatted_filename = formatted_filename.replace('%S%', current_time.strftime('%S'))
+        formatted_filename = template.replace('%Y', current_time.strftime('%Y'))
+        formatted_filename = formatted_filename.replace('%m', current_time.strftime('%m'))
+        formatted_filename = formatted_filename.replace('%d', current_time.strftime('%d'))
+        formatted_filename = formatted_filename.replace('%H', current_time.strftime('%H'))
+        formatted_filename = formatted_filename.replace('%M', current_time.strftime('%M'))
+        formatted_filename = formatted_filename.replace('%S', current_time.strftime('%S'))
+        formatted_filename = formatted_filename.replace('%EXT%', extension)
         return formatted_filename
 
-    def upload_file(self, file_content, filename, file_format):
+    def upload_file_to_azuracast(self, file_content, file_key):
         """
         Uploads a file to AzuraCast.
 
         Args:
             file_content (bytes): Content of the file to be uploaded.
-            filename (str): Name of the file to be uploaded.
-            file_format (str): Format of the file to be uploaded.
+            file_key (str): Key (name) of the file to be uploaded.
 
         Returns:
             dict: JSON response from the server.
         """
         endpoint = f"/station/{self.station_id}/files"
         
-        # Format filename using current date and time
-        filename_with_extension = self._format_filename(filename) + f".{file_format}"
-
         b64_content = b64encode(file_content).decode('utf-8')
         data = {
-            "path": f"{self.path}/{filename_with_extension}",
+            "path": file_key,
             "file": b64_content
         }
         return self._perform_request('POST', endpoint, json=data)
@@ -138,26 +136,22 @@ class AzuraCastClient:
         }
         return self._perform_request('PUT', endpoint, json=data)
 
-    def integrate_azuracast_with_audio_segment(self, audio_segment, file_format):
+    def upload_file(self, file_content, file_key):
         """
         Integrates with AzuraCast by uploading an AudioSegment and managing its playlist.
 
         Args:
-            audio_segment (AudioSegment): The AudioSegment object to be uploaded.
-            file_format (str): The format of the audio file to be uploaded.
+            file_content (bytes): Content of the file to be uploaded.
+            file_key (str): Key (name) of the file to be uploaded.
         """
-        if not all([self.host, self.api_key, self.station_id, self.path, self.filename]):
+        if not all([self.host, self.api_key, self.station_id]):
             logging.info("AzuraCast environment variables are not fully set")
             return
 
         try:
-            # Export AudioSegment to a BytesIO in the specified format
-            output_bytes_io = BytesIO()
-            audio_segment.export(output_bytes_io, format=file_format)
-            output_bytes_io.seek(0)
-            file_content = output_bytes_io.read()
-
-            upload_response = self.upload_file(file_content, self.filename, file_format)
+            file_key = f"{self.path}/{file_key}" if self.path else file_key
+            
+            upload_response = self.upload_file_to_azuracast(file_content, file_key)
             file_id = upload_response['id']
             logging.info(f"Uploaded Azuracast file with ID: {file_id}")
 
