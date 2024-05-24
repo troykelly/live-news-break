@@ -63,6 +63,10 @@ class S3Client:
         Returns:
             bool: True if file uploaded successfully, False otherwise.
         """
+        if not all([self.endpoint_url, self.access_key, self.secret_key]):
+            logging.info("S3 environment variables are not fully set")
+            return
+
         try:
             file_key = f"{self.path}/{file_key}" if self.path else file_key
 
