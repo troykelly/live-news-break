@@ -23,12 +23,6 @@ class S3Client:
         self.secret_key = os.getenv('S3_SECRET_KEY')
         self.path = os.getenv('S3_PATH', '').strip('/')
         self.filename_template = os.getenv('S3_FILENAME', 'news_%Y%m%d_%H%M%S.%EXT%')
-        
-        self.s3_client = boto3.client('s3', 
-                                      region_name=self.region_name,
-                                      endpoint_url=self.endpoint_url,
-                                      aws_access_key_id=self.access_key,
-                                      aws_secret_access_key=self.secret_key)
 
     def format_filename(self, template, extension):
         """
@@ -66,6 +60,12 @@ class S3Client:
         if not all([self.endpoint_url, self.access_key, self.secret_key]):
             logging.info("S3 environment variables are not fully set")
             return
+
+        self.s3_client = boto3.client('s3', 
+                                            region_name=self.region_name,
+                                            endpoint_url=self.endpoint_url,
+                                            aws_access_key_id=self.access_key,
+                                            aws_secret_access_key=self.secret_key)
 
         try:
             file_key = f"{self.path}/{file_key}" if self.path else file_key
