@@ -26,7 +26,7 @@ from mutagen.flac import FLAC
 from croniter import croniter
 from io import BytesIO
 from typing import List
-
+from azuracast.main import AzuraCastClient
 
 logging.basicConfig(level=logging.INFO)
 
@@ -1402,6 +1402,10 @@ def generate_news_audio():
         else:
             logging.error(f"Failed to create link or copy file to '{output_link}'")
             logging.error(traceback.format_exc())
+            
+    # Upload to AzuraCast
+    azuracast_client = AzuraCastClient()
+    #azuracast_client.integrate_azuracast()
 
     # Check for AcoustID user and application keys
     acoustid_user_key = os.getenv('ACOUSTID_USER_KEY', '').strip()
@@ -1417,6 +1421,7 @@ def generate_news_audio():
             logging.error(traceback.format_exc())
     else:
         logging.warning("AcoustID user key or application key is not defined. Skipping submission.")
+        
 
 def main():
     """Main function that fetches, parses, and processes the RSS feed into audio."""
