@@ -23,10 +23,12 @@ from random import choice
 from ftplib import FTP
 from mutagen.easyid3 import EasyID3
 from mutagen.flac import FLAC
+from mutagen.mp3 import MP3
 from croniter import croniter
 from io import BytesIO
 from typing import List
 from azuracast.main import AzuraCastClient
+from s3.main import S3Client
 
 logging.basicConfig(level=logging.INFO)
 
@@ -296,43 +298,6 @@ def process_text_for_tts(text):
     lexicon = load_lexicon(LEXICON_JSON_PATH)
     return apply_lexicon(text, lexicon)
 
-def set_synchronized_lyrics_metadata(audio_path, timestamps, lyrics_text):
-    """
-    Sets the synchronized lyrics metadata for an audio file using the timestamps and lyrics text.
-
-    Args:
-        audio_path (str): Path to the audio file.
-        timestamps (list): List of timestamps for each segment in format [MM:SS.ss].
-        lyrics_text (str): The lyrics text to sync with the timestamps.
-    """
-    try:
-        # Convert PosixPath to string if necessary
-        audio_path = str(audio_path)
-
-        if audio_path.endswith('.mp3'):
-            # For MP3 files
-            audio = ID3(audio_path)
-            sync_lyrics = [f"[{timestamp}]{text}" for timestamp, text in zip(timestamps, lyrics_text)]
-            audio.add(USLT(encoding=3, desc="SynchronizedLyricsText", text="\n".join(sync_lyrics)))
-            audio.add(USLT(encoding=3, desc="SynchronizedLyricsType", text="2"))
-            audio.add(USLT(encoding=3, desc="SynchronizedLyricsDescription", text="Script as read by newsreader"))
-            audio.save()
-        elif audio_path.endswith('.flac'):
-            # For FLAC files, we'll use Vorbis comments
-            audio = FLAC(audio_path)
-            sync_lyrics = [f"[{timestamp}]{text}" for timestamp, text in zip(timestamps, lyrics_text)]
-            audio['SynchronizedLyricsText'] = "\n".join(sync_lyrics)
-            audio['SynchronizedLyricsType'] = "2"
-            audio['SynchronizedLyricsDescription'] = "Script as read by newsreader"
-            audio.save()
-        else:
-            logging.warning(f"Unsupported file format for synchronized lyrics: {audio_path}")
-
-        logging.info(f"Synchronized lyrics metadata successfully updated for {audio_path}")
-    except Exception as e:
-        logging.error(f"An error occurred while updating synchronized lyrics metadata: {e}")
-        logging.error(traceback.format_exc())
-
 def generate_mixed_audio_and_track_timestamps(sfx_file, speech_audio, timing, start_offset):
     """Generate the mixed audio segment based on the provided timing, tracking timestamps."""
     sfx_audio = AudioSegment.from_file(sfx_file)
@@ -547,41 +512,6 @@ def wind_direction(deg):
     ]
     idx = int((deg + 11.25) / 22.5) % 16
     return directions[idx]
-
-def set_audio_metadata(file_path, metadata):
-    """
-    Sets metadata for an audio file.
-    
-    Args:
-        file_path (str): Path to the audio file.
-        metadata (dict): A dictionary of metadata to set.
-    """
-    try:
-        file_path = str(file_path)  # Convert PosixPath to string
-        
-        if file_path.endswith('.mp3'):
-            audio = EasyID3(file_path)
-        elif file_path.endswith('.flac'):
-            audio = FLAC(file_path)
-        elif file_path.endswith('.ogg'):
-            audio = mutagen.File(file_path, easy=True)
-        else:
-            logging.warning(f"File format not supported for metadata: {file_path}")
-            return
-        
-        # Set metadata
-        for key, value in metadata.items():
-            try:
-                audio[key] = value
-            except mutagen.MutagenError as e:
-                logging.warning(f"Error setting metadata key '{key}': {e}")
-        
-        # Save changes
-        audio.save()
-        logging.info(f"Metadata successfully updated for {file_path}")
-    except mutagen.MutagenError as e:
-        logging.error(f"Error opening file '{file_path}' for metadata update: {e}")
-        logging.error(traceback.format_exc())
 
 def format_datetime(dt):
     """Format datetime to a full and human-readable format."""
@@ -891,39 +821,48 @@ def generate_mixed_audio(sfx_file, speech_file, timing):
 
     return combined_audio
 
-def generate_audio_fingerprint_from_object(output_file_path):
+def generate_audio_fingerprint_from_object(audio_stream, audio_format):
     """Generate an audio fingerprint from an audio object using Chromaprint and AcoustID.
     
     Args:
-        output_file_path (str): The path to the audio file.
-    
+        audio_stream (BytesIO): The audio stream.
+        audio_format (str): The format of the audio.
+
     Returns:
-        tuple: (duration, fingerprint string, bitrate, file_format)
+        tuple: (duration, fingerprint string, bitrate)
         
     Raises:
         RuntimeError: If the fingerprinting process fails.
     """
-    try:        
+    try:
+        # Create a temporary file to use with acoustid's fingerprinting
+        temp_file = NamedTemporaryFile(delete=False, suffix=f".{audio_format}")
+        audio_stream.seek(0)
+        temp_file.write(audio_stream.read())
+        temp_file.close()
+
         # Generate fingerprint and duration
-        duration, fingerprint = acoustid.fingerprint_file(output_file_path)
+        duration, fingerprint = acoustid.fingerprint_file(temp_file.name)
         
         # Use mutagen to extract metadata (bitrate)
-        audio_file = mutagen.File(output_file_path)
+        audio_file = mutagen.File(temp_file.name)
         if audio_file is None:
             raise RuntimeError('Unsupported file format')
 
         bitrate = getattr(audio_file.info, 'bitrate', None) // 1000 if getattr(audio_file.info, 'bitrate', None) else None
-
+        
         return duration, fingerprint, bitrate
     except Exception as e:
         raise RuntimeError(f"Failed to generate fingerprint: {e}")
+    finally:
+        os.remove(temp_file.name)
 
-def submit_to_musicbrainz(output_file_path, output_format, metadata, user_key, application_key):
+def submit_to_musicbrainz(audio_stream_or_path, audio_format, metadata, user_key, application_key):
     """Submit the audio fingerprint along with metadata to MusicBrainz.
     
     Args:
-        output_file_path (str): The audio file path.
-        output_format (str): The format of the audio file.
+        audio_stream_or_path (BytesIO or str): The audio stream or file path.
+        audio_format (str): The format of the audio file.
         metadata (dict): Metadata dictionary including artist, title, etc.
         user_key (str): Your AcoustID user API key.
         application_key (str): Your AcoustID application API key
@@ -934,12 +873,20 @@ def submit_to_musicbrainz(output_file_path, output_format, metadata, user_key, a
     Raises:
         RuntimeError: If the submission process fails.
     """
-    # Generate fingerprint and retrieve accurate bitrate and file format
-    try:
-        duration, fingerprint, bitrate = generate_audio_fingerprint_from_object(output_file_path)
-    except Exception as e:
-        raise RuntimeError(f"Failed to generate fingerprint: {e}")
-    
+    if isinstance(audio_stream_or_path, BytesIO):
+        try:
+            duration, fingerprint, bitrate = generate_audio_fingerprint_from_object(audio_stream_or_path, audio_format)
+        except Exception as e:
+            raise RuntimeError(f"Failed to generate fingerprint: {e}")
+    else:
+        try:
+            duration, fingerprint = acoustid.fingerprint_file(audio_stream_or_path)
+            # Use mutagen to extract metadata (bitrate)
+            audio_file = mutagen.File(audio_stream_or_path)
+            bitrate = getattr(audio_file.info, 'bitrate', None) // 1000 if getattr(audio_file.info, 'bitrate', None) else None
+        except Exception as e:
+            raise RuntimeError(f"Failed to generate fingerprint: {e}")
+
     logging.info(f"Duration: {duration}, Bitrate: {bitrate} kbps")
 
     # Mapping existing metadata to AcoustID valid metadata
@@ -956,7 +903,7 @@ def submit_to_musicbrainz(output_file_path, output_format, metadata, user_key, a
         'trackno.0': metadata.get('tracknumber'),
         'discno.0': metadata.get('discnumber'),
         'bitrate.0': str(bitrate),
-        'fileformat.0': output_format,
+        'fileformat.0': audio_format,
         'format': 'json'
     }
 
@@ -1140,6 +1087,71 @@ def generate_voice_options(provider_name):
 
     return voice_options
 
+def set_audio_metadata_from_bytesio(audio_bytes, metadata, audio_format):
+    """
+    Sets metadata for an audio file using a BytesIO stream.
+
+    Args:
+        audio_bytes (BytesIO): BytesIO stream of the audio content.
+        metadata (dict): A dictionary of metadata to set.
+        audio_format (str): Format of the audio file (e.g., 'mp3', 'flac').
+    """
+    audio_bytes.seek(0)  # Ensure the stream is at the beginning
+    if audio_format == 'mp3':
+        audio_file = MP3(audio_bytes)
+    elif audio_format == 'flac':
+        audio_file = FLAC(audio_bytes)
+    else:
+        logging.warning(f"File format not supported for metadata: {audio_format}")
+        return
+    
+    # Set metadata
+    for key, value in metadata.items():
+        try:
+            audio_file[key] = value
+        except mutagen.MutagenError as e:
+            logging.warning(f"Error setting metadata key '{key}': {e}")
+    
+    # Save changes back to BytesIO
+    audio_bytes.seek(0)
+    audio_file.save(audio_bytes)
+
+def set_synchronized_lyrics_metadata_from_bytesio(audio_bytes, timestamps, lyrics_text, audio_format):
+    """
+    Sets synchronized lyrics metadata for an audio file using a BytesIO stream.
+
+    Args:
+        audio_bytes (BytesIO): BytesIO stream of the audio content.
+        timestamps (list): List of timestamps for each segment in format [MM:SS.ss].
+        lyrics_text (str): Lyrics text to sync with the timestamps.
+        audio_format (str): Format of the audio file (e.g., 'mp3', 'flac').
+    """
+    audio_bytes.seek(0)  # Ensure the stream is at the beginning
+    try:
+        if audio_format == 'mp3':
+            audio_file = MP3(audio_bytes)
+            sync_lyrics = [f"[{timestamp}]{text}" for timestamp, text in zip(timestamps, lyrics_text)]
+            audio_file.add(USLT(encoding=3, desc="SynchronizedLyricsText", text="\n".join(sync_lyrics)))
+            audio_file.add(USLT(encoding=3, desc="SynchronizedLyricsType", text="2"))
+            audio_file.add(USLT(encoding=3, desc="SynchronizedLyricsDescription", text="Script as read by newsreader"))
+        elif audio_format == 'flac':
+            audio_file = FLAC(audio_bytes)
+            sync_lyrics = [f"[{timestamp}]{text}" for timestamp, text in zip(timestamps, lyrics_text)]
+            audio_file['SynchronizedLyricsText'] = "\n".join(sync_lyrics)
+            audio_file['SynchronizedLyricsType'] = "2"
+            audio_file['SynchronizedLyricsDescription'] = "Script as read by newsreader"
+        else:
+            logging.warning(f"Unsupported file format for synchronized lyrics: {audio_format}")
+            return
+        
+        # Save changes back to BytesIO
+        audio_bytes.seek(0)
+        audio_file.save(audio_bytes)
+        
+    except Exception as e:
+        logging.error(f"An error occurred while updating synchronized lyrics metadata: {e}")
+        logging.error(traceback.format_exc())
+
 def generate_news_audio():
     """Function to handle the news generation and audio output."""
     feed_url = os.getenv('NEWS_READER_RSS', 'https://raw.githubusercontent.com/troykelly/live-news-break/main/demo.xml')
@@ -1229,20 +1241,9 @@ def generate_news_audio():
     script_sections = [section.strip() for section in script_sections if section.strip()]
 
     output_dir = os.getenv('NEWS_READER_OUTPUT_DIR', '.')
-    output_file_template = os.getenv('NEWS_READER_OUTPUT_FILE', 'livenews.%EXT%').replace('%EXT%', output_format)
-    output_file = output_file_template.replace('%Y%', datetime.now().strftime('%Y')).replace(
-        '%m%', datetime.now().strftime('%m')).replace('%d%', datetime.now().strftime('%d')).replace(
-        '%H%', datetime.now().strftime('%H')).replace('%M%', datetime.now().strftime('%M')).replace(
-        '%S%', datetime.now().strftime('%S'))
-    output_file_path = Path(output_dir) / output_file
-
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-    if not os.access(output_dir, os.W_OK):
-        raise PermissionError(f"The output directory '{output_dir}' is not writable.")
-
+    output_file_template = os.getenv('NEWS_READER_OUTPUT_FILE')
+    
     final_audio = AudioSegment.empty()
-    # speech_audio_files = []
     current_index = 0
     placeholder_to_key = {
         INTRO_PLACEHOLDER: "INTRO",
@@ -1257,12 +1258,12 @@ def generate_news_audio():
 
     article_start_time = None
     article_end_time = None
-    
+
     vo_segments_text: List[str] = []
     
     # Create the list of segments and generate them
     for section in script_sections:
-        if not section in placeholder_to_key:
+        if section not in placeholder_to_key:
             vo_segments_text.append(process_text_for_tts(section))
 
     voice_provider_options = generate_voice_options(tts_provider)
@@ -1275,8 +1276,8 @@ def generate_news_audio():
         else:
             raise ValueError(f"Unsupported TTS provider: {tts_provider}")
     except Exception as e:
-        raise Exception(f"An error occurred with {tts_provider} TTS: {e}")            
-            
+        raise Exception(f"An error occurred with {tts_provider} TTS: {e}")
+
     current_speech_segment = 0
 
     while current_index < len(script_sections):
@@ -1289,17 +1290,17 @@ def generate_news_audio():
             if sfx_file:
                 if current_index + 1 < len(script_sections):
                     speech_text = script_sections[current_index + 1]
-                    # speech_audio = generate_speech(speech_text, openai_api_key, tts_voice, tts_quality, output_format)
                     speech_audio = vo_segments[current_speech_segment]
-                    mixed_audio, speech_start_time = generate_mixed_audio_and_track_timestamps(sfx_file, speech_audio, timing_value, total_elapsed_time * 1000)
-                                        
+                    mixed_audio, speech_start_time = generate_mixed_audio_and_track_timestamps(
+                        sfx_file, speech_audio, timing_value, total_elapsed_time * 1000)
+                    
                     final_audio += mixed_audio
                     current_index += 2
                     
                     if sfx_key == "OUTRO" and article_end_time is None:
                         article_end_time = total_elapsed_time * 1000
                         logging.info(f"Music bed to end at {article_end_time}.")
-                        
+
                     if sfx_key == "FIRST" and article_start_time is None:
                         timing_offset = 0
                         if timing_value.lower() != "none":
@@ -1314,23 +1315,21 @@ def generate_news_audio():
                     raise ValueError("SFX placeholder found at the end without subsequent text.")
             else:
                 logging.warning(f"No SFX file for {section}")
-                current_index += 1                
+                current_index += 1
         else:
-            # speech_audio = generate_speech(section, openai_api_key, tts_voice, tts_quality, output_format)
             speech_audio = vo_segments[current_speech_segment]
-            
             final_audio += speech_audio
             current_index += 1
-            
+
             if article_start_time is None:
                 article_start_time = total_elapsed_time * 1000
 
             total_elapsed_time += len(speech_audio) / 1000  # Update elapsed time (in seconds)
             timestamps.append(format_timestamp(total_elapsed_time))
             lyrics_text.append(section)
-            
+
         current_speech_segment += 1
-            
+
     # Post-process to add music bed
     bed_file = audio_files.get("BED", None)
     if bed_file and article_start_time is not None and article_end_time is not None:
@@ -1359,17 +1358,21 @@ def generate_news_audio():
                 looped_bed_audio = looped_bed_audio.fade_out(bed_fadeout)
             # Overlay the bed audio starting from the adjusted article start time
             combined_audio = final_audio.overlay(looped_bed_audio, position=adjusted_article_start_time)
-            final_audio = combined_audio            
+            final_audio = combined_audio
 
-    final_audio.export(output_file_path, format=output_format)
+    # Export AudioSegment to a BytesIO stream in the specified format
+    output_bytes_io = BytesIO()
+    final_audio.export(output_bytes_io, format=output_format)
+    output_bytes_io.seek(0)  # Ensure the stream is at the beginning
+    output_file_content = output_bytes_io.read()
 
     # Human readable date for metadata
     metadata_human_date = current_time.strftime('%A, %B %d, %Y at %I:%M %p %Z')
-    
+
     # The release time of the news read (time plus time shift if it's set) as YYYY-MM-DDThh:mm:ssZ
     metadata_release_time = (current_time + timeshift_delta).strftime('%Y-%m-%dT%H:%M:%SZ')
 
-    # Set metadata for the generated audio file
+    # Set metadata for the generated audio
     metadata = {
         'title': f"{station_name} News Broadcast for {metadata_human_date}",
         'subtitle': f"Read by {reader_name}",
@@ -1389,24 +1392,10 @@ def generate_news_audio():
         'copyright': f"Copyright © {station_name} {datetime.now().strftime('%Y')}",
         'publisherurl': 'https://github.com/troykelly/live-news-break',
     }
-    set_audio_metadata(output_file_path, metadata)
-    set_synchronized_lyrics_metadata(output_file_path, timestamps, lyrics_text)  # Set SynLyrics metadata
-    logging.info(f"News audio generated and saved to {output_file_path}")
 
-    # Handle the NEWS_READER_OUTPUT_LINK environment variable
-    output_link = os.getenv('NEWS_READER_OUTPUT_LINK', '').strip()
-
-    if output_link:
-        if check_and_create_link_path(output_file_path, output_link):
-            logging.info(f"Successfully created link or copied file to '{output_link}'")
-        else:
-            logging.error(f"Failed to create link or copy file to '{output_link}'")
-            logging.error(traceback.format_exc())
-            
-    # Upload to AzuraCast
-    azuracast_client = AzuraCastClient()
-    #azuracast_client.integrate_azuracast()
-
+    set_audio_metadata_from_bytesio(output_bytes_io, metadata, output_format)
+    set_synchronized_lyrics_metadata_from_bytesio(output_bytes_io, timestamps, lyrics_text, output_format)  # Set SynLyrics metadata
+    
     # Check for AcoustID user and application keys
     acoustid_user_key = os.getenv('ACOUSTID_USER_KEY', '').strip()
     acoustid_application_key = os.getenv('ACOUSTID_APPLICATION_KEY', '').strip()
@@ -1414,14 +1403,70 @@ def generate_news_audio():
     if acoustid_user_key and acoustid_application_key:
         try:
             # Call the submit_to_musicbrainz function
-            response = submit_to_musicbrainz(output_file_path, output_format, metadata, acoustid_user_key, acoustid_application_key)
+            response = submit_to_musicbrainz(
+                output_bytes_io, 
+                output_format, 
+                metadata, 
+                acoustid_user_key, 
+                acoustid_application_key
+            )
             logging.info(f"Successfully submitted to MusicBrainz: {response}")
         except Exception as e:
             logging.error(f"Failed to submit to MusicBrainz: {e}")
             logging.error(traceback.format_exc())
     else:
         logging.warning("AcoustID user key or application key is not defined. Skipping submission.")
+
+    # Upload to AzuraCast
+    azuracast_client = AzuraCastClient()
+    azuracast_client.integrate_azuracast_with_audio_segment(AudioSegment.from_file(BytesIO(output_file_content), format=output_format), output_format)        
+
+    # Initialize S3 Client for uploading the audio file
+    s3_client = S3Client()
+
+    # Determine the output format extension and MIME type
+    output_format_extension = output_format  # e.g., 'flac'
+    output_mime_type = f"audio/{output_format_extension}"
+
+    # Use format_filename method for generating the file name
+    formatted_filename = s3_client.format_filename(s3_client.filename_template, output_format_extension)
+
+    s3_success = s3_client.upload_file(output_bytes_io.getvalue(), formatted_filename, output_mime_type)
+
+    if s3_success:
+        logging.info(f"News audio successfully uploaded to S3.")
+    else:
+        logging.error(f"Failed to upload news audio to S3.")
         
+    # Only write to file if NEWS_READER_OUTPUT_FILE is set
+    if output_file_template:
+        output_file = output_file_template.replace('%EXT%', output_format)
+        output_file = output_file.replace('%Y%', datetime.now().strftime('%Y')).replace(
+            '%m%', datetime.now().strftime('%m')).replace('%d%', datetime.now().strftime('%d')).replace(
+            '%H%', datetime.now().strftime('%H')).replace('%M%', datetime.now().strftime('%M')).replace(
+            '%S%', datetime.now().strftime('%S'))
+        output_file_path = Path(output_dir) / output_file
+
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+        if not os.access(output_dir, os.W_OK):
+            raise PermissionError(f"The output directory '{output_dir}' is not writable.")
+
+        # final_audio.export(output_file_path, format=output_format)
+        # Write output_bytes_io out to file
+        with open(output_file_path, 'wb') as f:
+            f.write(output_bytes_io.getvalue())
+        logging.info(f"News audio generated and saved to {output_file_path}")
+        
+        # Handle the NEWS_READER_OUTPUT_LINK environment variable
+        output_link = os.getenv('NEWS_READER_OUTPUT_LINK', '').strip()
+
+        if output_link and output_file_template:
+            if check_and_create_link_path(output_file_path, output_link):
+                logging.info(f"Successfully created link or copied file to '{output_link}'")
+            else:
+                logging.error(f"Failed to create link or copy file to '{output_link}'")
+                logging.error(traceback.format_exc())
 
 def main():
     """Main function that fetches, parses, and processes the RSS feed into audio."""
