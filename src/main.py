@@ -1530,6 +1530,8 @@ def generate_news_audio():
 
 def main():
     """Main function that fetches, parses, and processes the RSS feed into audio."""
+    if VERSION != '__VERSION__':
+        logger.info(f"News Reader v{VERSION}")
     cron_exp = os.getenv('NEWS_READER_CRON', '').strip()
 
     if cron_exp:
