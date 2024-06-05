@@ -3,16 +3,51 @@
         "abc": "a b c",
         "123": "one two three",
         "NSW": "New South Wales",
-        "Anthony Albanese": "Anthony /ɑɫbɑˈneɪzi/"
+        "ACT": "Australian Capital Territory",
+        "QLD": "Queensland",
+        "SA": "South Australia",
+        "TAS": "Tasmania",
+        "VIC": "Victoria",
+        "WA": "Western Australia",
+        "NT": "Northern Territory",
+        "Anthony Albanese": "Anthony /ɑɫbɑˈneɪzi/",
+        "WW2": "World War Two",
+        "WWII": "World War Two",
+        "COVID-19": "Coronavirus",
+        "ISO": "International Organization for Standardization",
+        "IoT": "Internet of Things",
+        "NIST": "National Institute of Standards and Technology",
+        "DDoS": "Distributed Denial of Service",
+        "GDPR": "General Data Protection Regulation",
+        "AI": "Artificial Intelligence",
+        "ML": "Machine Learning",
+        "HTML": "HyperText Markup Language",
+        "CSS": "Cascading Style Sheets",
+        "JS": "JavaScript",
+        "PHP": "Hypertext Preprocessor"
     },
     "direct_insensitive": {
         "quasar": "ˈkweɪzɑɹ",
-        "quasars": "ˈkweɪzɑɹz"
+        "quasars": "ˈkweɪzɑɹz",
+        "SQL": "Structured Query Language",
+        "API": "Application Programming Interface",
+        "UX": "User Experience",
+        "UI": "User Interface",
+        "CPU": "Central Processing Unit",
+        "GPU": "Graphics Processing Unit",
+        "RAM": "Random Access Memory",
+        "SSD": "Solid State Drive",
+        "HTTP": "Hypertext Transfer Protocol",
+        "HTTPS": "Hypertext Transfer Protocol Secure",
+        "EDI": "Electronic Data Interchange",
+        "ERP": "Enterprise Resource Planning",
+        "CRM": "Customer Relationship Management"
     },
     "regex": {
         "(?P<number>\\d+\\.?\\d*)°C": "\\g<number> degrees Celsius",
         "(?P<number>\\d+\\.?\\d*)°F": "\\g<number> degrees Fahrenheit",
         "-\\s?(?P<number>\\d+\\.?\\d*)°C": "negative \\g<number> degrees Celsius",
-        "-\\s?(?P<number>\\d+\\.?\\d*)°F": "negative \\g<number> degrees Fahrenheit"
+        "-\\s?(?P<number>\\d+\\.?\\d*)°F": "negative \\g<number> degrees Fahrenheit",
+        "(?P<number>\\d+\\.?\\d*)%": "\\g<number> percent"
     }
 }

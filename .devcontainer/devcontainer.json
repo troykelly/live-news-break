@@ -43,7 +43,8 @@
 				"GitHub.copilot-chat",
 				"ZainChen.json",
 				"VisualStudioExptTeam.vscodeintellicode",
-				"VisualStudioExptTeam.vscodeintellicode-completions"
+				"VisualStudioExptTeam.vscodeintellicode-completions",
+				"qwtel.sqlite-viewer"
 			]
 		},
 		"settings": {
@@ -58,7 +59,7 @@
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
 	// "forwardPorts": [],
 	// Use 'postCreateCommand' to run commands after the container is created.
-	"postCreateCommand": "echo 'export PYTHONPATH=./src' >> /home/vscode/.zshrc && echo 'export PATH=$PATH:/home/vscode/.local/bin' >> /home/vscode/.zshrc && sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get -y install ffmpeg && pip3 install --user -r requirements.txt",
+	"postCreateCommand": "echo 'export PYTHONPATH=./src' >> /home/vscode/.zshrc && echo 'export PATH=$PATH:/home/vscode/.local/bin' >> /home/vscode/.zshrc && sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get -y install ffmpeg wkhtmltopdf && pip3 install --user -r requirements.txt",
 	// Configure tool-specific properties.
 	// "customizations": {},
 	// Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.

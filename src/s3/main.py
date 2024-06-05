@@ -5,7 +5,10 @@ from botocore.exceptions import BotoCoreError, ClientError
 from io import BytesIO
 from datetime import datetime
 
-logging.basicConfig(level=logging.INFO)
+from logger import setup_logging
+
+setup_logging()
+logger = logging.getLogger(__name__)
 
 class S3Client:
     """

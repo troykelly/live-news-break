@@ -27,10 +27,16 @@ from mutagen.mp3 import MP3
 from croniter import croniter
 from io import BytesIO
 from typing import List
-from azuracast.main import AzuraCastClient
-from s3.main import S3Client
+from azuracast import AzuraCastClient
+from s3 import S3Client
+from replaygain import process_replaygain
+from typing import Dict, Any
+from logger import setup_logging
 
-logging.basicConfig(level=logging.INFO)
+setup_logging()
+logger = logging.getLogger(__name__)
+
+VERSION = "__VERSION__"  # <-- This will be replaced during the release process
 
 # Constants for placeholders
 INTRO_PLACEHOLDER = "[SFX: NEWS INTRO]"
@@ -1168,6 +1174,19 @@ def set_synchronized_lyrics_metadata_from_bytesio(audio_bytes, timestamps, lyric
         logging.error(f"An error occurred while updating synchronized lyrics metadata: {e}")
         logging.error(traceback.format_exc())
 
+def upload_and_update_metadata(audio_bytes: bytes, filename: str, track_metadata: Dict[str, Any]) -> None:
+    azuracast_client = AzuraCastClient()
+    
+    try:
+        upload_response = azuracast_client.upload_file_to_azuracast(audio_bytes, filename)
+        track_id = upload_response['id']
+        
+        # Update track metadata with lyrics and fade times
+        azuracast_client.update_track_metadata(track_id, track_metadata)
+
+    except requests.RequestException as e:
+        logging.error(f"Failed to upload or update metadata on AzuraCast: {e}")
+
 def generate_news_audio():
     """Function to handle the news generation and audio output."""
     feed_url = os.getenv('NEWS_READER_RSS', 'https://raw.githubusercontent.com/troykelly/live-news-break/main/demo.xml')
@@ -1380,7 +1399,8 @@ def generate_news_audio():
     output_bytes_io = BytesIO()
     final_audio.export(output_bytes_io, format=output_format)
     output_bytes_io.seek(0)  # Ensure the stream is at the beginning
-    output_file_content = output_bytes_io.read()
+    output_bytes_io = BytesIO(process_replaygain(output_bytes_io.getvalue(), file_format=output_format))  # Copy the BytesIO stream
+    output_bytes_io.seek(0)  # Ensure the stream is at the beginning
 
     # Human readable date for metadata
     metadata_human_date = current_time.strftime('%A, %B %d, %Y at %I:%M %p %Z')
@@ -1436,7 +1456,14 @@ def generate_news_audio():
     # Upload to AzuraCast
     azuracast_client = AzuraCastClient()
     azuracast_formatted_filename = prepare_filename(azuracast_client.filename_template, output_format, current_time)
-    azuracast_client.upload_file(output_bytes_io.getvalue(), azuracast_formatted_filename)
+    acuracast_file_id = azuracast_client.upload_file(output_bytes_io.getvalue(), azuracast_formatted_filename)
+    azuracast_file_metadata = {
+        'lyrics': news_script,
+        'fade_start_next': "2",
+        'fade_in': "0.1",
+        'fade_out': "0.1"
+    }
+    azuracast_client.update_track_metadata(acuracast_file_id, azuracast_file_metadata)
 
     # Initialize S3 Client for uploading the audio file
     s3_client = S3Client()

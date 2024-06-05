@@ -22,12 +22,18 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-    
+
     - name: Approve Dependabot PR
       run: |
         gh pr review ${{ github.event.pull_request.number }} --approve
       env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_TOKEN: ${{ secrets.PAM_REPO }}
+
+    - name: Merge Dependabot PR
+      run: |
+        gh pr merge ${{ github.event.pull_request.number }} --merge --delete-branch
+      env:
+        GH_TOKEN: ${{ secrets.PAM_REPO }}
 
   create-release:
     needs: approve-dependabot-pr
@@ -55,7 +61,7 @@ jobs:
     - name: Create draft release
       id: create_release
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.PAM_REPO }}
       run: |
         gh release create ${{ steps.get_latest_version.outputs.new_version }} -d -t "Release ${{ steps.get_latest_version.outputs.new_version }}" -n "Automated release by GitHub Actions"
 
@@ -65,8 +71,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
     - name: Publish draft release
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.PAM_REPO }}
       run: |
         gh release edit ${{ needs.create-release.outputs.new_version }} --draft=false
