@@ -30,6 +30,7 @@ from typing import List
 from azuracast import AzuraCastClient
 from s3 import S3Client
 from replaygain import process_replaygain
+from templating import TemplateHandlers, render_template
 from typing import Dict, Any
 from logger import setup_logging
 
@@ -117,7 +118,8 @@ FEED_CONFIG = {
     'PUBLISHED': 'pubDate',
     'IGNORE_PATTERNS': [
         r'SBS News in Easy English \d+ \w+ \d{4}',
-        r'News Bulletin \d+ \w+ \d{4}'
+        r'News Bulletin \d+ \w+ \d{4}',
+        r'INTERVIEW: .*',
     ]
 }
 
@@ -1201,15 +1203,6 @@ def generate_news_audio():
     if not openai_api_key:
         raise ValueError("The OpenAI API key must be set in the environment variable 'OPENAI_API_KEY'.")
 
-    prompt_file_path = os.getenv('NEWS_READER_PROMPT_FILE', './prompt.md')
-
-    try:
-        prompt_instructions = read_prompt_file(prompt_file_path)
-    except Exception as e:
-        logging.error(f"Error reading prompt file: {e}")
-        logging.error(traceback.format_exc())
-        return
-
     timezone_str = os.getenv('NEWS_READER_TIMEZONE', 'UTC')
     try:
         timezone = pytz.timezone(timezone_str)
@@ -1246,11 +1239,32 @@ def generate_news_audio():
         if bom_product_id:
             weather_info = fetch_bom_data(bom_product_id)
 
+    have_weather: bool = False
     if weather_info and "No data" not in weather_info and "No description" not in weather_info:
         news_items.insert(0, {'TITLE': 'Weather Report', 'DESCRIPTION': weather_info, 'CATEGORY': 'weather'})
+        have_weather = True
     else:
         logging.warning("Valid weather data not available. Skipping weather report.")
 
+    prompt_file_path = os.getenv('NEWS_READER_PROMPT_FILE', './prompt.md')
+    handlers = TemplateHandlers(
+        current_time=current_time,        
+        station_name=station_name,
+        station_city=STATION_CITY,
+        station_country=STATION_COUNTRY,
+        station_timezone_name=timezone.zone,
+        newsreader_name=reader_name,
+        have_weather=have_weather
+    )
+
+    try:
+        prompt_instructions = read_prompt_file(prompt_file_path)
+        prompt_instructions = render_template(prompt_instructions, handlers)
+    except Exception as e:
+        logging.error(f"Error reading prompt file: {e}")
+        logging.error(traceback.format_exc())
+        return
+    
     news_script = generate_news_script(
         news_items, prompt_instructions, station_name, reader_name, current_time, openai_api_key
     )

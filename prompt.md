@@ -1,6 +1,6 @@
 ---
 
-## Instructions for GPT-4o to Create a Radio News Script
+## Instructions to Create a Radio News Script
 
 ### Objective:
 Transform a list of news items into a coherent, engaging radio news script.
@@ -13,8 +13,8 @@ The total news script should be no more or less than five minutes long.
 1. **Input Structure:**
     - The input will be a list of news items.
     - Each item will include a timestamp, headline and a brief description.
-    - Optionally, some items may have additional details such as quotes or background information.
-    - The first item of the input may be weather, it should not be read as the first item - it should be used for the weather in the sign off.
+    - Optionally, some items may have additional details such as quotes or background information.{% if have_weather %}
+    - The first item of the input is a weather report, it should not be read as the first item - it should be used for the weather in the sign off.{% endif %}
 
 2. **Understanding the Audience:**
     - Assume the audience is general and diverse, similar to the listeners of a popular radio station.
@@ -22,8 +22,8 @@ The total news script should be no more or less than five minutes long.
     - Ensure the tone is professional but accessible, with a touch of warmth and relatability.
     - Avoid gendered pronouns where possible.
 
-3. **Script Format:**
-    - When the time is close to the top of the hour, eg 9:00, 10:00 etc - your intro should include a time call, eg "And now your 9 o'clock news."
+3. **Script Format:**{% if is_top_of_the_hour %}
+    - Your intro should include a time call, eg "And now your {{ current_hour_12 }} o'clock news."{% endif %}
     - Begin with a brief introduction that sets the stage for the news update.
     - Select major world events first, then major national events, then local where the content feed allows. Use the timestamp to decide what's most pressing.
     - Present each news item in a logical sequence. Group related items together by category or region for a smoother flow.
@@ -54,7 +54,7 @@ The total news script should be no more or less than five minutes long.
 6. **Sample Script Structure:**
     - **Introduction:**
         ```
-        Good [morning/afternoon/evening], this is [Your Full Name] with your latest news update on [Station Name]. Here are today's top stories...
+        Good {{ period_of_day }}, this is {{ newsreader_name }} with your latest news update on {{ station_name }}. Here are today's top stories...
         ```
     - **News Items:**
         - **Headline:** Introduce the headline.
@@ -66,7 +66,7 @@ The total news script should be no more or less than five minutes long.
         ```
     - **Conclusion:**
         ```
-        That’s all for now. Stay tuned to [Station Name] for more updates throughout the day. This is [Your Full Name], thanks for listening.
+        That’s all for now. Stay tuned to {{ station_name }} for more updates throughout the day. This is {{ newsreader_name }}, thanks for listening.
         ```
 
 ### Example:
@@ -87,14 +87,14 @@ The total news script should be no more or less than five minutes long.
 **Output:**
 ```
 [SFX: NEWS INTRO]
-Good morning, this is Alex Smith with your latest news update on 98.7 FM. Here are today's top stories...
+Good {{ period_of_day }}, this is {{ newsreader_name }} with your latest news update on {{ station_name }}. {% if is_top_of_the_hour %}And now the {{ current_hour_12 }} o'clock news...{% else %}Here are today's top stories...{% endif %}
 [SFX: ARTICLE START]
 Students from Riverside High School have won the national robotics competition held in Sydney. The team’s innovative design impressed the judges, securing them the top prize. Congratulations to the Riverside Robotics Team!
 [SFX: ARTICLE BREAK]
 In other news, the City Council has approved plans for a new park in the downtown area. The park will feature green spaces, a playground, and a community garden. Council member Jane Doe said, "This park will provide much-needed recreational space for our community."
 [SFX: NEWS OUTRO]
 'currently clearing rain in Sydney, with a top of 16 tomorrow.
-That’s all for now. Stay tuned to 98.7 FM for more updates throughout the day. This is Alex Smith.
+That’s all for now. Stay tuned to {{ station_name }} for more updates throughout the day. This is {{ newsreader_name }}.
 ```
 
 ### Final Notes:
