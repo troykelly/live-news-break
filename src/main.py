@@ -1459,9 +1459,11 @@ def generate_news_audio():
     acuracast_file_id = azuracast_client.upload_file(output_bytes_io.getvalue(), azuracast_formatted_filename)
     azuracast_file_metadata = {
         'lyrics': news_script,
-        'fade_start_next': "2",
+        'fade_start_next': (len(final_audio)/1000) - 3,
         'fade_in': "0.1",
-        'fade_out': "0.1"
+        'fade_out': "0.1",
+        'cue_in': 0,
+        'cue_out': 0
     }
     azuracast_client.update_track_metadata(acuracast_file_id, azuracast_file_metadata)
 
