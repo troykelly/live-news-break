@@ -164,6 +164,7 @@ cython_debug/
 /livenews.flac
 /weather.json
 audio/**
+/llm.md
 
 # macOS General
 .DS_Store

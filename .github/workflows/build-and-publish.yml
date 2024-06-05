@@ -49,21 +49,29 @@ jobs:
           exit 1
         fi
 
-        echo "::set-output name=version::$version"
+        sed -i "s/VERSION = \"__VERSION__\"/VERSION = \"${version}\"/" src/main.py
+
+        echo "version=$version" >> $GITHUB_ENV
         
         major=$(echo $version | cut -d. -f1)
         minor=$(echo $version | cut -d. -f2)
         patch=$(echo $version | cut -d. -f3)
 
-        echo "::set-output name=major::$major"
-        echo "::set-output name=minor::$minor"
-        echo "::set-output name=patch::$patch"
+        echo "major=$major" >> $GITHUB_ENV
+        echo "minor=$minor" >> $GITHUB_ENV
+        echo "patch=$patch" >> $GITHUB_ENV
 
-    - name: Extract repository name
+    - name: Get current commit SHA
+      id: git_sha
+      run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_ENV
+
+    - name: Extract repository details
       id: extract_repo
       run: |
         REPO_NAME=$(echo "${{ github.repository }}" | awk -F/ '{print $2}')
-        echo "::set-output name=repo_name::$REPO_NAME"
+        REPO_URL="https://github.com/${{ github.repository }}"
+        echo "repo_name=$REPO_NAME" >> $GITHUB_ENV
+        echo "repo_url=$REPO_URL" >> $GITHUB_ENV
 
     - name: Build and push Docker image (main or release)
       uses: docker/build-push-action@v5
@@ -75,10 +83,35 @@ jobs:
         push: true
         cache-from: type=gha
         cache-to: type=gha,mode=max
+        labels: |
+          org.opencontainers.image.revision=${{ env.sha }}
+          org.opencontainers.image.created=$GITHUB_EVENT_DATETIME
+        build-args: |
+          BUILD_DATE=$GITHUB_EVENT_DATETIME
+          VCS_REF=${{ env.sha }}
+          VERSION=${{ github.event_name == 'release' && env.version || 'latest' }}
+          REPO_URL=${{ env.repo_url }}
         tags: |
-          ${{ github.event_name == 'release' && github.event.release.tag_name != '' && format('ghcr.io/{0}/{1}:latest', github.repository_owner, steps.extract_repo.outputs.repo_name) || '' }}
-          ${{ github.event_name == 'release' && github.event.release.tag_name != '' && format('ghcr.io/{0}/{1}:{2}', github.repository_owner, steps.extract_repo.outputs.repo_name, github.event.release.tag_name) || '' }}
-          ${{ github.event_name == 'release' && github.event.release.tag_name != '' && format('ghcr.io/{0}/{1}:{2}', github.repository_owner, steps.extract_repo.outputs.repo_name, steps.version.outputs.version) || '' }}
-          ${{ github.event_name == 'release' && github.event.release.tag_name != '' && format('ghcr.io/{0}/{1}:{2}', github.repository_owner, steps.extract_repo.outputs.repo_name, steps.version.outputs.major) || '' }}
-          ${{ github.event_name == 'release' && github.event.release.tag_name != '' && format('ghcr.io/{0}/{1}:{2}.{3}', github.repository_owner, steps.extract_repo.outputs.repo_name, steps.version.outputs.major, steps.version.outputs.minor) || '' }}
-          ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && format('ghcr.io/{0}/{1}:edge', github.repository_owner, steps.extract_repo.outputs.repo_name) || '' }}
+          ${{ github.event_name == 'release' && github.event.release.tag_name != '' && format('ghcr.io/{0}/{1}:latest', github.repository_owner, env.repo_name) || '' }}
+          ${{ github.event_name == 'release' && github.event.release.tag_name != '' && format('ghcr.io/{0}/{1}:{2}', github.repository_owner, env.repo_name, github.event.release.tag_name) || '' }}
+          ${{ github.event_name == 'release' && github.event.release.tag_name != '' && format('ghcr.io/{0}/{1}:{2}', github.repository_owner, env.repo_name, env.version) || '' }}
+          ${{ github.event_name == 'release' && github.event.release.tag_name != '' && format('ghcr.io/{0}/{1}:{2}', github.repository_owner, env.repo_name, env.major) || '' }}
+          ${{ github.event_name == 'release' && github.event.release.tag_name != '' && format('ghcr.io/{0}/{1}:{2}.{3}', github.repository_owner, env.repo_name, env.major, env.minor) || '' }}
+          ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && format('ghcr.io/{0}/{1}:edge', github.repository_owner, env.repo_name) || '' }}
+        outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/${{ env.repo_name }},annotation-index.org.opencontainers.image.description=Extracts media from Emby and syncs to AzuraCast
+
+    - name: Create release artifact
+      if: github.event_name == 'release'
+      run: |
+        mkdir -p release
+        cp -r src release/
+        cd release
+        tar -czf ../release_${{ env.version }}.tar.gz .
+        
+    - name: Upload release artifact
+      if: github.event_name == 'release'
+      uses: actions/upload-artifact@v4
+      with:
+        name: release_${{ env.version }}.tar.gz
+        path: release_${{ env.version }}.tar.gz
+        retention-days: 5
