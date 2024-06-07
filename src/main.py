@@ -176,7 +176,7 @@ def check_and_create_link_path(source, link_path):
         logging.error(f"Failed to copy '{source}' to '{link_path}': {e}")
         logging.error(traceback.format_exc())
         return False
-    
+
 def load_lexicon(file_path):
     """Load lexicon dictionary from a JSON file.
 
@@ -1264,7 +1264,7 @@ def generate_news_audio():
         logging.error(f"Error reading prompt file: {e}")
         logging.error(traceback.format_exc())
         return
-    
+
     news_script = generate_news_script(
         news_items, prompt_instructions, station_name, reader_name, current_time, openai_api_key
     )
@@ -1291,7 +1291,7 @@ def generate_news_audio():
 
     output_dir = os.getenv('NEWS_READER_OUTPUT_DIR', '.')
     output_file_template = os.getenv('NEWS_READER_OUTPUT_FILE')
-    
+
     final_audio = AudioSegment.empty()
     current_index = 0
     placeholder_to_key = {
@@ -1309,7 +1309,7 @@ def generate_news_audio():
     article_end_time = None
 
     vo_segments_text: List[str] = []
-    
+
     # Create the list of segments and generate them
     for section in script_sections:
         if section not in placeholder_to_key:
@@ -1342,10 +1342,10 @@ def generate_news_audio():
                     speech_audio = vo_segments[current_speech_segment]
                     mixed_audio, speech_start_time = generate_mixed_audio_and_track_timestamps(
                         sfx_file, speech_audio, timing_value, total_elapsed_time * 1000)
-                    
+
                     final_audio += mixed_audio
                     current_index += 2
-                    
+
                     if sfx_key == "OUTRO" and article_end_time is None:
                         article_end_time = total_elapsed_time * 1000
                         logging.info(f"Music bed to end at {article_end_time}.")
@@ -1445,7 +1445,7 @@ def generate_news_audio():
 
     set_audio_metadata_from_bytesio(output_bytes_io, metadata, output_format)
     set_synchronized_lyrics_metadata_from_bytesio(output_bytes_io, timestamps, lyrics_text, output_format)  # Set SynLyrics metadata
-    
+
     # Check for AcoustID user and application keys
     acoustid_user_key = os.getenv('ACOUSTID_USER_KEY', '').strip()
     acoustid_application_key = os.getenv('ACOUSTID_APPLICATION_KEY', '').strip()
@@ -1472,12 +1472,12 @@ def generate_news_audio():
     azuracast_formatted_filename = prepare_filename(azuracast_client.filename_template, output_format, current_time)
     acuracast_file_id = azuracast_client.upload_file(output_bytes_io.getvalue(), azuracast_formatted_filename)
     azuracast_file_metadata = {
-        'lyrics': news_script,
-        'fade_start_next': (len(final_audio)/1000) - 3,
-        'fade_in': "0.1",
-        'fade_out': "0.1",
-        'cue_in': 0,
-        'cue_out': 0
+        "lyrics": news_script,
+        "fade_start_next": (len(final_audio) / 1000) - 3,
+        "fade_in": "0.1",
+        "fade_out": "0.1",
+        "cue_in": 0,
+        "cue_out": (len(final_audio) / 1000),
     }
     azuracast_client.update_track_metadata(acuracast_file_id, azuracast_file_metadata)
 
@@ -1497,7 +1497,7 @@ def generate_news_audio():
         logging.info(f"News audio successfully uploaded to S3.")
     else:
         logging.error(f"Failed to upload news audio to S3.")
-        
+
     # Only write to file if NEWS_READER_OUTPUT_FILE is set
     if output_file_template:
         output_file = output_file_template.replace('%EXT%', output_format)
@@ -1517,7 +1517,7 @@ def generate_news_audio():
         with open(output_file_path, 'wb') as f:
             f.write(output_bytes_io.getvalue())
         logging.info(f"News audio generated and saved to {output_file_path}")
-        
+
         # Handle the NEWS_READER_OUTPUT_LINK environment variable
         output_link = os.getenv('NEWS_READER_OUTPUT_LINK', '').strip()
 
