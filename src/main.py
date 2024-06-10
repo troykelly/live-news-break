@@ -274,7 +274,6 @@ def cleanup_cache():
             cache_file.unlink()
             logging.info(f"Deleted cached file: {cache_file}")
 
-
 def apply_lexicon(text, lexicon):
     """Apply lexicon translations to the given text.
 
@@ -285,22 +284,24 @@ def apply_lexicon(text, lexicon):
     Returns:
         str: The text after applying lexicon conversions.
     """
-    import re
-
+    
     # Sort and apply case-sensitive direct text to translation mappings (prioritize longer matches)
     direct_sensitive = sorted(
         lexicon.get("direct_sensitive", {}).items(), key=lambda x: -len(x[0])
     )
     for original, translation in direct_sensitive:
-        text = text.replace(original, translation)
+        # Use regex with word boundaries for exact word match
+        pattern = re.compile(r'\b' + re.escape(original) + r'\b')
+        text = pattern.sub(translation, text)
 
     # Sort and apply case-insensitive direct text to translation mappings (prioritize longer matches)
     direct_insensitive = sorted(
         lexicon.get("direct_insensitive", {}).items(), key=lambda x: -len(x[0])
     )
     for original, translation in direct_insensitive:
-        pattern = re.compile(re.escape(original), re.IGNORECASE)
-        text = pattern.sub(lambda m: translation, text)
+        # Use regex with word boundaries for exact word match and case insensitivity
+        pattern = re.compile(r'\b' + re.escape(original) + r'\b', re.IGNORECASE)
+        text = pattern.sub(translation, text)
 
     # Apply regex patterns with named groups
     for pattern, translation in lexicon.get("regex", {}).items():
