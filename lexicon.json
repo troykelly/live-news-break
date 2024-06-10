@@ -10,7 +10,7 @@
         "VIC": "Victoria",
         "WA": "Western Australia",
         "NT": "Northern Territory",
-        "Anthony Albanese": "Anthony /ɑɫbɑˈneɪzi/",
+        "Albanese": "/ɑɫbɑˈneɪzi/",
         "WW2": "World War Two",
         "WWII": "World War Two",
         "COVID-19": "Coronavirus",
@@ -24,11 +24,7 @@
         "HTML": "HyperText Markup Language",
         "CSS": "Cascading Style Sheets",
         "JS": "JavaScript",
-        "PHP": "Hypertext Preprocessor"
-    },
-    "direct_insensitive": {
-        "quasar": "ˈkweɪzɑɹ",
-        "quasars": "ˈkweɪzɑɹz",
+        "PHP": "Hypertext Preprocessor",
         "SQL": "Structured Query Language",
         "API": "Application Programming Interface",
         "UX": "User Experience",
@@ -42,6 +38,11 @@
         "EDI": "Electronic Data Interchange",
         "ERP": "Enterprise Resource Planning",
         "CRM": "Customer Relationship Management"
+    },
+    "direct_insensitive": {
+        "quasar": "ˈkweɪzɑɹ",
+        "quasars": "ˈkweɪzɑɹz",
+        "quasar's": "ˈkweɪzɑɹz"
     },
     "regex": {
         "(?P<number>\\d+\\.?\\d*)°C": "\\g<number> degrees Celsius",
