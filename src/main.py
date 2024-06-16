@@ -1536,6 +1536,7 @@ def generate_news_audio():
         weather_info
         and "No data" not in weather_info
         and "No description" not in weather_info
+        and "missing data" not in weather_info
     ):
         news_items.insert(
             0,
