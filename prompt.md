@@ -14,7 +14,7 @@ Transform a list of news items into a coherent, engaging radio news script that 
     - The input will be a list of news items.
     - Each item will include a timestamp, headline, and a brief description.
     - Optionally, some items may have additional details such as quotes or background information.{% if have_weather %}
-    - The first item of the input is a weather report; it should not be read as the first item - it should be used for the weather in the sign-off.{% endif %}
+    - The first item of the input is a weather report; it should not be read as the first item - it should be used for the weather in the sign-off/outro.{% endif %}
     - Select and elaborate on news items as needed to ensure the total script reaches exactly five minutes. 
 
 2. **Understanding the Audience:**
@@ -28,6 +28,8 @@ Transform a list of news items into a coherent, engaging radio news script that 
     - Your intro should include a time call, e.g., "And now your {{ current_hour_12 }} o'clock news."{% endif %}
     - Begin with a brief introduction that sets the stage for the news update.
     - Select major world events first, then major national events, and then local where the content feed allows.
+    - Select items that are newsworthy.
+    - Ignore "Clickbait" style news items, ie "This company has grown to overtake all the competition, find out more"
     - Use the timestamp to decide what's most pressing.
     - Present each news item in a logical sequence. Group related items together by category or region for smoother flow.
     - If two or more items are about the same topic, ie a change of legislation, make sure their articles are sequential
@@ -79,11 +81,11 @@ Transform a list of news items into a coherent, engaging radio news script that 
         - **Headline:** Introduce the headline.
         - **Details:** Provide a brief description and relevant details. Include quotes if available.
         - **Full Coverage:** Elaborate on each item thoroughly to ensure the segment fills the 5-minute duration.
-        - **Transition:** Connect to the next item.
-    - **Weather:**
+        - **Transition:** Connect to the next item.{% if have_weather %}
+    - **Weather In Outro:**
         ```
-        It's currently [current_temp] here in Sydney, and we are looking at a high of [high] tomorrow with lows around [low] and [chance_rain] chance of rain.
-        ```
+        It's currently [current_temp] here in {{ station_city }}, and we are looking at a high of [high] tomorrow with lows around [low] and [chance_rain] chance of rain.
+        ```{% endif %}
     - **Conclusion:**
         ```
         That’s all for now. Stay tuned to {{ station_name }} for more updates throughout the day. This is {{ newsreader_name }}, thanks for listening.
@@ -94,7 +96,7 @@ Transform a list of news items into a coherent, engaging radio news script that 
 **Input:**
 1. **Headline:** Weather Report
    **Category:** weather
-   **Description:** Weather in Sydney, Australia: Shower or two, with a 60% chance of precipitation. For tomorrow, expect a low of 12°C and a high of 19°C, with showers easing and an 80% chance of precipitation.
+   **Description:** Weather in {{ station_city }}, Australia: Shower or two, with a 60% chance of precipitation. For tomorrow, expect a low of 12°C and a high of 19°C, with showers easing and an 80% chance of precipitation.
 
 2. **Headline:** Program hoping to inspire locals to enrol to vote ahead of NT elections
    **Category:** Australia
@@ -109,10 +111,11 @@ Transform a list of news items into a coherent, engaging radio news script that 
 [SFX: NEWS INTRO]
 Good {{ period_of_day }}, this is {{ newsreader_name }} with your latest news update on {{ station_name }}. {% if is_top_of_the_hour %}And now the {{ current_hour_12 }} o'clock news...{% else %}Here are today's top stories...{% endif %}
 [SFX: ARTICLE START]
-Students from Riverside High School have won the national robotics competition held in Sydney. The team’s innovative design impressed the judges, securing them the top prize. Congratulations to the Riverside Robotics Team!
+Students from Riverside High School have won the national robotics competition held in {{ station_city }}. The team’s innovative design impressed the judges, securing them the top prize. Congratulations to the Riverside Robotics Team!
 [SFX: ARTICLE BREAK]
 In other news, the City Council has approved plans for a new park in the downtown area. The park will feature green spaces, a playground, and a community garden. Council member Jane Doe said, "This park will provide much-needed recreational space for our community."
-[SFX: NEWS OUTRO]
+[SFX: NEWS OUTRO]{% if have_weather %}
+It's a very chilly 9 degrees here in {{ station_city }} right now, we are headed for a high of 13. Tommorow's high will be 14 so not looking a lot warmer!{% endif %}
 That’s all for now. Stay tuned to {{ station_name }} for more updates throughout the day. This is {{ newsreader_name }}.
 ```
 

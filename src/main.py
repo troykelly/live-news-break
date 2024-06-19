@@ -901,6 +901,31 @@ def clean_script(script):
     return "\n".join(cleaned_lines)
 
 
+def clean_non_spoken_content(report: str) -> str:
+    """
+    Cleans non-spoken content from the report by removing anything before '[SFX: NEWS INTRO]'.
+
+    Args:
+        report (str): The original news report text.
+
+    Returns:
+        str: The cleaned news report with non-spoken content removed.
+    """
+    # Define the marker where spoken content begins
+    marker = "[SFX: NEWS INTRO]"
+    
+    # Find the position of the marker in the report
+    marker_position = report.find(marker)
+    
+    if marker_position == -1:
+        # If the marker is not found, return the report as is
+        return report
+
+    # Extract the content starting from the marker
+    cleaned_report = report[marker_position:].strip()
+    
+    return cleaned_report
+
 def read_prompt_file(file_path):
     """Reads the contents of a prompt file with error handling.
 
@@ -1584,6 +1609,7 @@ def generate_news_audio():
 
     # Clean the news script to remove formatting markers
     news_script = clean_script(news_script)
+    news_script = clean_non_spoken_content(news_script)
 
     logging.info(f"# News Script\n\n{news_script}")
 
