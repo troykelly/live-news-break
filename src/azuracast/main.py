@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 RETRY_COUNT = 5
 BACKOFF_FACTOR = 0.3
 
+
 class AzuraCastClient:
     """Client for interacting with the AzuraCast API."""
 
@@ -23,10 +24,12 @@ class AzuraCastClient:
         """Initializes the AzuraCast client with environment variables."""
         self.host: Optional[str] = os.getenv('AZURACAST_HOST')
         self.api_key: Optional[str] = os.getenv('AZURACAST_API_KEY')
-        self.station_id: Optional[int] = int(os.getenv('AZURACAST_STATIONID', '0'))
+        self.station_id: Optional[int] = int(
+            os.getenv('AZURACAST_STATIONID', '0'))
         self.path: Optional[str] = os.getenv('AZURACAST_PATH')
         self.playlist_name: Optional[str] = os.getenv('AZURACAST_PLAYLIST')
-        self.filename_template: str = os.getenv('AZURACAST_FILENAME', 'news.%EXT%')
+        self.filename_template: str = os.getenv(
+            'AZURACAST_FILENAME', 'news.%EXT%')
 
     def _perform_request(
         self,
@@ -54,16 +57,20 @@ class AzuraCastClient:
         url = f"{self.host}/api{endpoint}"
         headers = headers or {}
         headers.update({"X-API-Key": self.api_key})
-        
+
         for attempt in range(RETRY_COUNT):
             try:
-                response = requests.request(method, url, headers=headers, data=data, json=json)
+                response = requests.request(
+                    method, url, headers=headers, data=data, json=json)
                 response.raise_for_status()
                 return response.json()
             except RequestException as e:
                 status_code = e.response.status_code if e.response else None
+                response_text = e.response.text if e.response else 'No response body'
                 if status_code in {500, 502, 503, 504}:
-                    logging.error(f"Attempt {attempt + 1} failed with status {status_code}: {e}")
+                    logging.error(
+                        f"Attempt {attempt + 1} failed with status {status_code}: {e}")
+                    logging.debug(f"Server response: {response_text}")
                     if attempt < RETRY_COUNT - 1:
                         sleep_time = BACKOFF_FACTOR * (2 ** attempt)
                         logging.info(f"Retrying in {sleep_time} seconds...")
@@ -72,7 +79,9 @@ class AzuraCastClient:
                         logging.error("Maximum retry attempts reached.")
                         raise
                 else:
-                    logging.error(f"Request failed with status {status_code}: {e}")
+                    logging.error(f"Request failed with status {
+                                  status_code}: {e}")
+                    logging.debug(f"Server response: {response_text}")
                     raise
 
     def format_filename(self, template: str, extension: str) -> str:
@@ -86,12 +95,18 @@ class AzuraCastClient:
             The formatted filename.
         """
         current_time = datetime.now()
-        formatted_filename = template.replace('%Y', current_time.strftime('%Y'))
-        formatted_filename = formatted_filename.replace('%m', current_time.strftime('%m'))
-        formatted_filename = formatted_filename.replace('%d', current_time.strftime('%d'))
-        formatted_filename = formatted_filename.replace('%H', current_time.strftime('%H'))
-        formatted_filename = formatted_filename.replace('%M', current_time.strftime('%M'))
-        formatted_filename = formatted_filename.replace('%S', current_time.strftime('%S'))
+        formatted_filename = template.replace(
+            '%Y', current_time.strftime('%Y'))
+        formatted_filename = formatted_filename.replace(
+            '%m', current_time.strftime('%m'))
+        formatted_filename = formatted_filename.replace(
+            '%d', current_time.strftime('%d'))
+        formatted_filename = formatted_filename.replace(
+            '%H', current_time.strftime('%H'))
+        formatted_filename = formatted_filename.replace(
+            '%M', current_time.strftime('%M'))
+        formatted_filename = formatted_filename.replace(
+            '%S', current_time.strftime('%S'))
         formatted_filename = formatted_filename.replace('%EXT%', extension)
         return formatted_filename
 
@@ -106,7 +121,7 @@ class AzuraCastClient:
             A dictionary containing the JSON response from the server.
         """
         endpoint = f"/station/{self.station_id}/files"
-        
+
         b64_content = b64encode(file_content).decode('utf-8')
         data = {
             "path": file_key,
@@ -162,7 +177,7 @@ class AzuraCastClient:
         if not all([self.host, self.api_key, self.station_id]):
             logging.info("AzuraCast environment variables are not fully set")
             return
-        
+
         endpoint = f"/station/{self.station_id}/file/{track_id}"
         self._perform_request('PUT', endpoint, json=metadata)
 
@@ -172,7 +187,7 @@ class AzuraCastClient:
         Args:
             file_content: Content of the file to be uploaded.
             file_key: Key (name) of the file to be uploaded.
-            
+
         Returns:
             The ID of the uploaded file.
         """
@@ -182,8 +197,9 @@ class AzuraCastClient:
 
         try:
             file_key = f"{self.path}/{file_key}" if self.path else file_key
-            
-            upload_response = self.upload_file_to_azuracast(file_content, file_key)
+
+            upload_response = self.upload_file_to_azuracast(
+                file_content, file_key)
             file_id = upload_response['id']
             logging.info(f"Uploaded Azuracast file with ID: {file_id}")
 
@@ -192,8 +208,9 @@ class AzuraCastClient:
                 if playlist_id:
                     self.empty_playlist(playlist_id)
                     self.add_to_playlist(file_id, playlist_id)
-                    logging.info(f"Added file to Azuracast playlist: {self.playlist_name}")
-                    
+                    logging.info(f"Added file to Azuracast playlist: {
+                                 self.playlist_name}")
+
             # Ensure the file ID is an integer and return it
             if isinstance(file_id, int):
                 return file_id

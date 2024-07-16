@@ -274,6 +274,7 @@ def cleanup_cache():
             cache_file.unlink()
             logging.info(f"Deleted cached file: {cache_file}")
 
+
 def apply_lexicon(text, lexicon):
     """Apply lexicon translations to the given text.
 
@@ -284,7 +285,7 @@ def apply_lexicon(text, lexicon):
     Returns:
         str: The text after applying lexicon conversions.
     """
-    
+
     # Sort and apply case-sensitive direct text to translation mappings (prioritize longer matches)
     direct_sensitive = sorted(
         lexicon.get("direct_sensitive", {}).items(), key=lambda x: -len(x[0])
@@ -300,7 +301,8 @@ def apply_lexicon(text, lexicon):
     )
     for original, translation in direct_insensitive:
         # Use regex with word boundaries for exact word match and case insensitivity
-        pattern = re.compile(r'\b' + re.escape(original) + r'\b', re.IGNORECASE)
+        pattern = re.compile(
+            r'\b' + re.escape(original) + r'\b', re.IGNORECASE)
         text = pattern.sub(translation, text)
 
     # Apply regex patterns with named groups
@@ -344,24 +346,28 @@ def generate_mixed_audio_and_track_timestamps(
             # Add silence after SFX for the timing offset
             padding = timing_offset - sfx_duration
             combined_audio = (
-                sfx_audio + AudioSegment.silent(duration=padding) + speech_audio
+                sfx_audio +
+                AudioSegment.silent(duration=padding) + speech_audio
             )
             speech_start_time = start_offset + sfx_duration + padding
         else:
             # Overlay speech onto SFX at the specified timing offset
-            combined_audio = sfx_audio.overlay(speech_audio, position=timing_offset)
+            combined_audio = sfx_audio.overlay(
+                speech_audio, position=timing_offset)
             speech_start_time = start_offset + timing_offset
             if timing_offset + speech_duration > sfx_duration:
                 # Add remaining speech to the end if extends beyond SFX
                 combined_audio = (
-                    combined_audio + speech_audio[sfx_duration - timing_offset :]
+                    combined_audio +
+                    speech_audio[sfx_duration - timing_offset:]
                 )
     else:
         logging.info("No overlay timing specified, appending speech to SFX")
         combined_audio = sfx_audio + speech_audio
         speech_start_time = start_offset + len(sfx_audio)
 
-    return combined_audio, speech_start_time / 1000  # Convert to seconds for SynLyrics
+    # Convert to seconds for SynLyrics
+    return combined_audio, speech_start_time / 1000
 
 
 def format_timestamp(seconds):
@@ -421,7 +427,8 @@ def parse_rss_feed(feed_url, config):
         parsed_items.append(item)
 
     # Sort the parsed items by the published date in descending order
-    parsed_items.sort(key=lambda x: x["PUBLISHED"] or datetime.min, reverse=True)
+    parsed_items.sort(key=lambda x: x["PUBLISHED"]
+                      or datetime.min, reverse=True)
 
     return parsed_items
 
@@ -479,7 +486,8 @@ def fetch_bom_data(product_id):
                     )
 
                     # Get forecast period for the immediate future
-                    forecast_period_future = area.find("forecast-period[@index='1']")
+                    forecast_period_future = area.find(
+                        "forecast-period[@index='1']")
                     if forecast_period_future is not None:
                         future_min_temp = (
                             forecast_period_future.find(
@@ -502,7 +510,8 @@ def fetch_bom_data(product_id):
                             else "No data"
                         )
                         forecast_future_precis = (
-                            forecast_period_future.find("text[@type='precis']").text
+                            forecast_period_future.find(
+                                "text[@type='precis']").text
                             if forecast_period_future.find("text[@type='precis']")
                             is not None
                             else "No description"
@@ -519,10 +528,14 @@ def fetch_bom_data(product_id):
                         )
 
                         return (
-                            f"Weather in {description}, {STATION_COUNTRY}: {forecast_now_precis} "
-                            f"with a {forecast_now_pop} chance of precipitation. For tomorrow, "
-                            f"expect a low of {future_min_temp}°C and a high of {future_max_temp}°C with {forecast_future_precis} "
-                            f"and a {forecast_future_pop} chance of precipitation."
+                            f"Weather in {description}, {
+                                STATION_COUNTRY}: {forecast_now_precis} "
+                            f"with a {
+                                forecast_now_pop} chance of precipitation. For tomorrow, "
+                            f"expect a low of {future_min_temp}°C and a high of {
+                                future_max_temp}°C with {forecast_future_precis} "
+                            f"and a {
+                                forecast_future_pop} chance of precipitation."
                         )
 
         # If no forecast data is found
@@ -567,11 +580,13 @@ def fetch_openweather_data(api_key, lat, lon, units, weather_json_path):
                     return weather_data["data"]
         except (json.JSONDecodeError, KeyError, ValueError) as e:
             logging.warning(
-                f"Error reading or parsing weather JSON file: {e}. Fetching new data."
+                f"Error reading or parsing weather JSON file: {
+                    e}. Fetching new data."
             )
 
     # Fetch new data from OpenWeatherMap API due to stale data or parsing error
-    weather_api_url = f"https://api.openweathermap.org/data/3.0/onecall?lat={lat}&lon={lon}&units={units}&appid={api_key}"
+    weather_api_url = f"https://api.openweathermap.org/data/3.0/onecall?lat={
+        lat}&lon={lon}&units={units}&appid={api_key}"
 
     try:
         response = requests.get(weather_api_url)
@@ -629,13 +644,16 @@ def wind_direction(deg):
 def format_datetime(dt):
     """Format datetime to a full and human-readable format."""
     # Suffixes for day of the month
-    day_suffix = lambda d: (
-        "th" if 10 <= d % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(d % 10, "th")
+    def day_suffix(d): return (
+        "th" if 10 <= d % 100 <= 20 else {
+            1: "st", 2: "nd", 3: "rd"}.get(d % 10, "th")
     )
     day = dt.day
     suffix = day_suffix(day)
-    formatted_datetime = dt.strftime(f"%A the {day}{{suffix}} of %B %Y at %H:%M (%Z)")
+    formatted_datetime = dt.strftime(
+        f"%A the {day}{{suffix}} of %B %Y at %H:%M (%Z)")
     return formatted_datetime.replace("{suffix}", suffix)
+
 
 def validate_and_get(dct: Dict[str, Any], keys: List[Union[str, int]]) -> Optional[Any]:
     """Validate and retrieve a value from a nested dictionary.
@@ -647,7 +665,7 @@ def validate_and_get(dct: Dict[str, Any], keys: List[Union[str, int]]) -> Option
 
     Returns:
         The value if found; None if any key is missing or invalid.
-        
+
     Example:
         >>> data = {'a': {'b': {'c': 1}}}
         >>> validate_and_get(data, ['a', 'b', 'c'])
@@ -656,7 +674,7 @@ def validate_and_get(dct: Dict[str, Any], keys: List[Union[str, int]]) -> Option
         None
     """
     current_level = dct
-    
+
     for key in keys:
         if isinstance(current_level, dict) and key in current_level:
             current_level = current_level[key]
@@ -667,6 +685,7 @@ def validate_and_get(dct: Dict[str, Any], keys: List[Union[str, int]]) -> Option
             return None
 
     return current_level
+
 
 def generate_openweather_weather_report(data, units="metric"):
     """Generate a weather report from JSON data.
@@ -688,18 +707,21 @@ def generate_openweather_weather_report(data, units="metric"):
             return "Weather report generation skipped due to missing data."
 
     # Validate current weather data keys.
-    current_weather_keys = ["dt", "temp", "feels_like", "humidity", "weather", "uvi", "wind_speed", "wind_deg", "sunrise", "sunset"]
+    current_weather_keys = ["dt", "temp", "feels_like", "humidity",
+                            "weather", "uvi", "wind_speed", "wind_deg", "sunrise", "sunset"]
     for key in current_weather_keys:
         if isinstance(data["current"], list) and key not in data["current"][0]:
             logging.warning(f"Missing key in current weather data: {key}")
             return "Weather report generation skipped due to missing data."
 
     # Validate daily weather data keys.
-    daily_weather_keys = ["dt", "temp", "feels_like", "humidity", "weather", "pop", "wind_speed", "wind_deg"]
+    daily_weather_keys = ["dt", "temp", "feels_like",
+                          "humidity", "weather", "pop", "wind_speed", "wind_deg"]
     for idx in range(2):
         for key in daily_weather_keys:
             if isinstance(data["daily"], list) and key not in data["daily"][idx]:
-                logging.warning(f"Missing key in daily weather data: {key} for index {idx}")
+                logging.warning(f"Missing key in daily weather data: {
+                                key} for index {idx}")
                 return "Weather report generation skipped due to missing data."
 
     # Validate minutely weather data keys.
@@ -722,7 +744,8 @@ def generate_openweather_weather_report(data, units="metric"):
         current_weather["dt"], timezone(timedelta(seconds=timezone_offset))
     )
     sunrise = datetime.fromtimestamp(
-        current_weather["sunrise"], timezone(timedelta(seconds=timezone_offset))
+        current_weather["sunrise"], timezone(
+            timedelta(seconds=timezone_offset))
     )
     sunset = datetime.fromtimestamp(
         current_weather["sunset"], timezone(timedelta(seconds=timezone_offset))
@@ -739,12 +762,15 @@ def generate_openweather_weather_report(data, units="metric"):
     # Current weather report.
     current_report = (
         f"Current Weather Update as of {format_datetime(current_time)}:\n"
-        f"Temperature: {current_weather['temp']}{temp_unit} (Feels like: {current_weather['feels_like']}{temp_unit})\n"
+        f"Temperature: {current_weather['temp']}{
+            temp_unit} (Feels like: {current_weather['feels_like']}{temp_unit})\n"
         f"Humidity: {current_weather['humidity']}%\n"
-        f"Condition: {current_weather['weather'][0]['description'].capitalize()}\n"
+        f"Condition: {current_weather['weather']
+                      [0]['description'].capitalize()}\n"
         f"Wind: {wind_speed:.2f} {wind_speed_unit} from the {wind_bearing}\n"
         f"UV Index: {current_weather['uvi']}\n"
-        f"Sunrise at: {format_datetime(sunrise)}, Sunset at: {format_datetime(sunset)}\n"
+        f"Sunrise at: {format_datetime(sunrise)}, Sunset at: {
+            format_datetime(sunset)}\n"
     )
 
     # Immediate future weather.
@@ -761,24 +787,32 @@ def generate_openweather_weather_report(data, units="metric"):
         )
 
     # Convert next day wind speed.
-    next_day_wind_speed = convert_wind_speed(next_day_weather["wind_speed"], units)
+    next_day_wind_speed = convert_wind_speed(
+        next_day_weather["wind_speed"], units)
     next_day_wind_bearing = wind_direction(next_day_weather["wind_deg"])
 
     # Next day weather report.
     next_day_report = (
-        f"Weather Forecast for Tomorrow ({format_datetime(datetime.fromtimestamp(next_day_weather['dt'], timezone(timedelta(seconds=timezone_offset))))}):\n"
-        f"Day Temperature: {next_day_weather['temp']['day']}{temp_unit} (Feels like: {next_day_weather['feels_like']['day']}{temp_unit})\n"
-        f"Night Temperature: {next_day_weather['temp']['night']}{temp_unit} (Feels like: {next_day_weather['feels_like']['night']}{temp_unit})\n"
-        f"Condition: {next_day_weather['weather'][0]['description'].capitalize()}\n"
+        f"Weather Forecast for Tomorrow ({format_datetime(datetime.fromtimestamp(
+            next_day_weather['dt'], timezone(timedelta(seconds=timezone_offset))))}):\n"
+        f"Day Temperature: {next_day_weather['temp']['day']}{
+            temp_unit} (Feels like: {next_day_weather['feels_like']['day']}{temp_unit})\n"
+        f"Night Temperature: {next_day_weather['temp']['night']}{
+            temp_unit} (Feels like: {next_day_weather['feels_like']['night']}{temp_unit})\n"
+        f"Condition: {next_day_weather['weather']
+                      [0]['description'].capitalize()}\n"
         f"Humidity: {next_day_weather['humidity']}%\n"
-        f"Wind: {next_day_wind_speed:.2f} {wind_speed_unit} from the {next_day_wind_bearing}\n"
+        f"Wind: {next_day_wind_speed:.2f} {
+            wind_speed_unit} from the {next_day_wind_bearing}\n"
         f"Chance of Rain: {next_day_weather['pop'] * 100}%"
     )
 
     # Combine all reports.
-    full_report = f"{current_report}\n{immediate_future_report}\n\n{next_day_report}"
+    full_report = f"{current_report}\n{
+        immediate_future_report}\n\n{next_day_report}"
 
     return full_report
+
 
 def clean_text(input_string):
     """Remove HTML tags, non-human-readable content, and excess whitespace from the text."""
@@ -829,7 +863,8 @@ def generate_news_script(
     max_tokens = 8192
     max_completion_tokens = 4095
     prompt_length = len(prompt_instructions.split())
-    station_ident = f'Station Name is "{station_name}"\nStation city is "{STATION_CITY}"\nStation country is "{STATION_COUNTRY}"\nNews reader name is "{reader_name}"'
+    station_ident = f'Station Name is "{station_name}"\nStation city is "{
+        STATION_CITY}"\nStation country is "{STATION_COUNTRY}"\nNews reader name is "{reader_name}"'
     time_ident = f'Current date and time is "{current_time}"\n'
 
     combined_prompt = time_ident + station_ident + "\n\n"
@@ -846,7 +881,8 @@ def generate_news_script(
         # Include published date if available
         published_date = item.get("PUBLISHED", None)
         if published_date and published_date != "Unknown":
-            published_date = published_date.strftime("%A, %B %d, %Y at %I:%M %p %Z")
+            published_date = published_date.strftime(
+                "%A, %B %d, %Y at %I:%M %p %Z")
             date_line = f"   **Published on:** {published_date}\n"
         else:
             date_line = ""
@@ -868,10 +904,12 @@ def generate_news_script(
 
     if not news_content:
         logging.info(f"News Content: {news_content}")
-        logging.info(f"Prompt length: {prompt_length}, News length: {news_length}")
+        logging.info(f"Prompt length: {
+                     prompt_length}, News length: {news_length}")
         raise ValueError(
             f"The combined length of the prompt instructions and news content "
-            f"exceeds the maximum token limit for the OpenAI API: {max_tokens} tokens."
+            f"exceeds the maximum token limit for the OpenAI API: {
+                max_tokens} tokens."
         )
 
     user_prompt = combined_prompt + news_content
@@ -913,18 +951,19 @@ def clean_non_spoken_content(report: str) -> str:
     """
     # Define the marker where spoken content begins
     marker = "[SFX: NEWS INTRO]"
-    
+
     # Find the position of the marker in the report
     marker_position = report.find(marker)
-    
+
     if marker_position == -1:
         # If the marker is not found, return the report as is
         return report
 
     # Extract the content starting from the marker
     cleaned_report = report[marker_position:].strip()
-    
+
     return cleaned_report
+
 
 def read_prompt_file(file_path):
     """Reads the contents of a prompt file with error handling.
@@ -945,14 +984,17 @@ def read_prompt_file(file_path):
         with open(file_path, "r", encoding="utf-8") as file:
             return file.read()
     except FileNotFoundError:
-        raise FileNotFoundError(f"The prompt file at '{file_path}' was not found.")
+        raise FileNotFoundError(f"The prompt file at '{
+                                file_path}' was not found.")
     except PermissionError:
         raise PermissionError(
-            f"Permission denied when trying to read the prompt file at '{file_path}'."
+            f"Permission denied when trying to read the prompt file at '{
+                file_path}'."
         )
     except IOError as e:
         raise IOError(
-            f"An I/O error occurred while reading the prompt file at '{file_path}': {e}"
+            f"An I/O error occurred while reading the prompt file at '{
+                file_path}': {e}"
         )
     except Exception as e:
         raise Exception(
@@ -1022,10 +1064,12 @@ def check_audio_files():
                 logging.info(f"Audio file found for {key}: {random_file}")
             else:
                 logging.warning(
-                    f"Audio file for {key} specified as {file_path} was not found and no alternatives exist."
+                    f"Audio file for {key} specified as {
+                        file_path} was not found and no alternatives exist."
                 )
         else:
-            logging.warning(f"Environment variable {env_var} for {key} not set.")
+            logging.warning(f"Environment variable {
+                            env_var} for {key} not set.")
     return checked_files
 
 
@@ -1042,22 +1086,26 @@ def generate_mixed_audio(sfx_file, speech_file, timing):
         speech_duration = len(speech_audio)
         total_duration = timing_offset + speech_duration
         logging.info(
-            f"Overlaying speech at offset {timing_offset}ms of SFX duration {sfx_duration}ms for total duration of {total_duration}ms"
+            f"Overlaying speech at offset {timing_offset}ms of SFX duration {
+                sfx_duration}ms for total duration of {total_duration}ms"
         )
 
         if timing_offset > sfx_duration:
             # Add silence after SFX for the timing offset
             padding = timing_offset - sfx_duration
             combined_audio = (
-                sfx_audio + AudioSegment.silent(duration=padding) + speech_audio
+                sfx_audio +
+                AudioSegment.silent(duration=padding) + speech_audio
             )
         else:
             # Overlay speech onto SFX at the specified timing offset
-            combined_audio = sfx_audio.overlay(speech_audio, position=timing_offset)
+            combined_audio = sfx_audio.overlay(
+                speech_audio, position=timing_offset)
             if timing_offset + speech_duration > sfx_duration:
                 # Add remaining speech to the end if extends beyond SFX
                 combined_audio = (
-                    combined_audio + speech_audio[sfx_duration - timing_offset :]
+                    combined_audio +
+                    speech_audio[sfx_duration - timing_offset:]
                 )
     else:
         logging.info("No overlay timing specified, appending speech to SFX")
@@ -1134,7 +1182,8 @@ def submit_to_musicbrainz(
             raise RuntimeError(f"Failed to generate fingerprint: {e}")
     else:
         try:
-            duration, fingerprint = acoustid.fingerprint_file(audio_stream_or_path)
+            duration, fingerprint = acoustid.fingerprint_file(
+                audio_stream_or_path)
             # Use mutagen to extract metadata (bitrate)
             audio_file = mutagen.File(audio_stream_or_path)
             bitrate = (
@@ -1175,7 +1224,8 @@ def submit_to_musicbrainz(
     data = {k: v for k, v in data.items() if v is not None}
 
     try:
-        response = requests.get("https://api.acoustid.org/v2/submit", params=data)
+        response = requests.get(
+            "https://api.acoustid.org/v2/submit", params=data)
         response.raise_for_status()
         return response.json()
     except requests.RequestException as e:
@@ -1271,7 +1321,8 @@ def elevenlabs_segments_to_speech(
 
     try:
         # Get list of voices
-        voices_response = requests.get(api_endpoints["voices"], headers=api_headers)
+        voices_response = requests.get(
+            api_endpoints["voices"], headers=api_headers)
         voices_response.raise_for_status()
         voices_data = voices_response.json()
         elevenlabs_voices = voices_data["voices"]
@@ -1290,7 +1341,8 @@ def elevenlabs_segments_to_speech(
         None,
     )
     if not voice_id:
-        raise ValueError(f"The specified voice '{voice}' does not exist in ElevenLabs.")
+        raise ValueError(f"The specified voice '{
+                         voice}' does not exist in ElevenLabs.")
 
     audio_segments: List[AudioSegment] = []
     previous_request_ids: List[str] = []
@@ -1307,7 +1359,7 @@ def elevenlabs_segments_to_speech(
                 # A maximum of three next or previous history item ids can be send
                 "previous_request_ids": previous_request_ids[-3:],
                 "previous_text": None if is_first_segment else " ".join(segments[:i]),
-                "next_text": None if is_last_segment else " ".join(segments[i + 1 :]),
+                "next_text": None if is_last_segment else " ".join(segments[i + 1:]),
             },
             headers={"xi-api-key": api_key},
         )
@@ -1342,7 +1394,7 @@ def generate_voice_options(provider_name):
     for key, value in os.environ.items():
         if key.startswith(env_prefix):
             # Remove the provider prefix and convert to lower case
-            option_key = key[len(env_prefix) :].lower()
+            option_key = key[len(env_prefix):].lower()
 
             # Convert "True" and "False" to boolean
             if value.lower() == "true":
@@ -1397,7 +1449,8 @@ def set_audio_metadata_from_bytesio(audio_bytes, metadata, audio_format):
     elif audio_format == "flac":
         audio_file = FLAC(audio_bytes)
     else:
-        logging.warning(f"File format not supported for metadata: {audio_format}")
+        logging.warning(
+            f"File format not supported for metadata: {audio_format}")
         return
 
     # Set metadata
@@ -1439,7 +1492,8 @@ def set_synchronized_lyrics_metadata_from_bytesio(
                     text="\n".join(sync_lyrics),
                 )
             )
-            audio_file.add(USLT(encoding=3, desc="SynchronizedLyricsType", text="2"))
+            audio_file.add(
+                USLT(encoding=3, desc="SynchronizedLyricsType", text="2"))
             audio_file.add(
                 USLT(
                     encoding=3,
@@ -1458,7 +1512,8 @@ def set_synchronized_lyrics_metadata_from_bytesio(
             audio_file["SynchronizedLyricsDescription"] = "Script as read by newsreader"
         else:
             logging.warning(
-                f"Unsupported file format for synchronized lyrics: {audio_format}"
+                f"Unsupported file format for synchronized lyrics: {
+                    audio_format}"
             )
             return
 
@@ -1468,7 +1523,8 @@ def set_synchronized_lyrics_metadata_from_bytesio(
 
     except Exception as e:
         logging.error(
-            f"An error occurred while updating synchronized lyrics metadata: {e}"
+            f"An error occurred while updating synchronized lyrics metadata: {
+                e}"
         )
         logging.error(traceback.format_exc())
 
@@ -1573,7 +1629,8 @@ def generate_news_audio():
         )
         have_weather = True
     else:
-        logging.warning("Valid weather data not available. Skipping weather report.")
+        logging.warning(
+            "Valid weather data not available. Skipping weather report.")
 
     prompt_file_path = os.getenv("NEWS_READER_PROMPT_FILE", "./prompt.md")
     handlers = TemplateHandlers(
@@ -1618,8 +1675,10 @@ def generate_news_audio():
 
     # Correctly split the script by placeholders
     pattern = re.compile(
-        f"({re.escape(INTRO_PLACEHOLDER)}|{re.escape(ARTICLE_START_PLACEHOLDER)}|"
-        f"{re.escape(ARTICLE_BREAK_PLACEHOLDER)}|{re.escape(OUTRO_PLACEHOLDER)})"
+        f"({re.escape(INTRO_PLACEHOLDER)}|{
+            re.escape(ARTICLE_START_PLACEHOLDER)}|"
+        f"{re.escape(ARTICLE_BREAK_PLACEHOLDER)}|{
+            re.escape(OUTRO_PLACEHOLDER)})"
     )
     script_sections = pattern.split(news_script)
     script_sections = [
@@ -1703,14 +1762,17 @@ def generate_news_audio():
 
                     if sfx_key == "OUTRO" and article_end_time is None:
                         article_end_time = total_elapsed_time * 1000
-                        logging.info(f"Music bed to end at {article_end_time}.")
+                        logging.info(f"Music bed to end at {
+                                     article_end_time}.")
 
                     if sfx_key == "FIRST" and article_start_time is None:
                         timing_offset = 0
                         if timing_value.lower() != "none":
                             timing_offset = int(timing_value)
-                        article_start_time = (total_elapsed_time * 1000) + timing_offset
-                        logging.info(f"Music bed to start at {article_start_time}.")
+                        article_start_time = (
+                            total_elapsed_time * 1000) + timing_offset
+                        logging.info(f"Music bed to start at {
+                                     article_start_time}.")
 
                     timestamps.append(format_timestamp(speech_start_time))
                     lyrics_text.append(speech_text)
@@ -1777,7 +1839,8 @@ def generate_news_audio():
     final_audio.export(output_bytes_io, format=output_format)
     output_bytes_io.seek(0)  # Ensure the stream is at the beginning
     output_bytes_io = BytesIO(
-        process_replaygain(output_bytes_io.getvalue(), file_format=output_format)
+        process_replaygain(output_bytes_io.getvalue(),
+                           file_format=output_format)
     )  # Copy the BytesIO stream
     output_bytes_io.seek(0)  # Ensure the stream is at the beginning
 
@@ -1817,7 +1880,8 @@ def generate_news_audio():
 
     # Check for AcoustID user and application keys
     acoustid_user_key = os.getenv("ACOUSTID_USER_KEY", "").strip()
-    acoustid_application_key = os.getenv("ACOUSTID_APPLICATION_KEY", "").strip()
+    acoustid_application_key = os.getenv(
+        "ACOUSTID_APPLICATION_KEY", "").strip()
 
     if acoustid_user_key and acoustid_application_key:
         try:
@@ -1854,7 +1918,12 @@ def generate_news_audio():
         "cue_in": 0,
         "cue_out": (len(final_audio) / 1000),
     }
-    azuracast_client.update_track_metadata(acuracast_file_id, azuracast_file_metadata)
+
+    try:
+        azuracast_client.update_track_metadata(
+            acuracast_file_id, azuracast_file_metadata)
+    except Exception as e:
+        logging.error(f"Failed to upload to AzuraCast: {e}")
 
     # Initialize S3 Client for uploading the audio file
     s3_client = S3Client()
@@ -1909,10 +1978,12 @@ def generate_news_audio():
         if output_link and output_file_template:
             if check_and_create_link_path(output_file_path, output_link):
                 logging.info(
-                    f"Successfully created link or copied file to '{output_link}'"
+                    f"Successfully created link or copied file to '{
+                        output_link}'"
                 )
             else:
-                logging.error(f"Failed to create link or copy file to '{output_link}'")
+                logging.error(
+                    f"Failed to create link or copy file to '{output_link}'")
                 logging.error(traceback.format_exc())
 
 
@@ -1925,7 +1996,8 @@ def main():
     if cron_exp:
         if not validate_cron(cron_exp):
             logging.error(
-                f"Invalid cron expression '{cron_exp}' in 'NEWS_READER_CRON' environment variable."
+                f"Invalid cron expression '{
+                    cron_exp}' in 'NEWS_READER_CRON' environment variable."
             )
             logging.error(traceback.format_exc())
             return
@@ -1938,7 +2010,8 @@ def main():
                 sleep_duration = (next_run - current_time).total_seconds()
 
                 logging.info(
-                    f"Scheduled next run at: {next_run} (sleeping for {sleep_duration} seconds)"
+                    f"Scheduled next run at: {
+                        next_run} (sleeping for {sleep_duration} seconds)"
                 )
                 time.sleep(sleep_duration)
 
