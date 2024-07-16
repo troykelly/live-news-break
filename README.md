@@ -4,6 +4,7 @@ The `live-news-break` repository contains a news generation script that fetches,
 
 ## Table of Contents
 
+- [Speech Generation Notes](#speech-generation-notes)
 - [Prerequisites](#prerequisites)
 - [Setup](#setup)
 - [Configuration](#configuration)
@@ -15,6 +16,16 @@ The `live-news-break` repository contains a news generation script that fetches,
 ## Demo
 
 Listen to the demo here: [https://audio.com/troy-8/audio/troykelly-live-news-break-demo-reel-1](https://audio.com/troy-8/audio/troykelly-live-news-break-demo-reel-1)
+
+## Speech Generation Notes
+
+We support generating your news read using OpenAI or ElevenLabs text to speech.
+
+Although we support ElevenLabs, *DON'T USE IT* you will be wasting your time and money.
+
+ElevenLabs have absolutly no interest in their API users, and their voices aren't capable of reading a full news read.
+
+OpenAI's voices may stumble over a word or phrase, but trust me - ElevenLabs is a total waste of your time.
 
 ## Test
 
