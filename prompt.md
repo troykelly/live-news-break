@@ -30,8 +30,7 @@ Transform a list of news items into a coherent, engaging radio news script that 
     - Discard "Clickbait" style news items, ie "This company has grown to overtake all the competition, find out more"
     - Group stories that are related together. If two or more stories are related, ensure they are together.
     - Select stories based on their importance and timeliness. Each story has a timestamp, newer stories should always be preferred over older ones.
-    - The news read should start with major international stories, then national, then local to fill out the five minutes.
-    - In the afternoon, if there is a fun but otherwise unimportant story, it can be included as the last news item.{% if have_weather %}
+    - The news read should start with major international stories, then national, then local to fill out the five minutes.{% if have_weather %}
     - Weather should be read as part of the signoff, not in the news read.{% endif %}
 
 4. **Script Format:**{% if is_top_of_the_hour %}
