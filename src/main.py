@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import os
 import re
 import feedparser
@@ -13,11 +15,12 @@ import time
 import hashlib
 import acoustid
 import traceback
+import calendar
+from mutagen import File as MutagenFile
 from openai import OpenAI
-import mutagen.id3  # Importing mutagen's id3 for SynLyrics
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from pydub import AudioSegment  # Ensure you have ffmpeg installed
+from pydub import AudioSegment
 from tempfile import NamedTemporaryFile
 from random import choice
 from ftplib import FTP
@@ -26,12 +29,11 @@ from mutagen.flac import FLAC
 from mutagen.mp3 import MP3
 from croniter import croniter
 from io import BytesIO
-from typing import List
+from typing import List, Dict, Any, Optional, Tuple, Union
 from azuracast import AzuraCastClient
 from s3 import S3Client
 from replaygain import process_replaygain
 from templating import TemplateHandlers, render_template
-from typing import Dict, Any, Union, Optional
 from logger import setup_logging
 
 setup_logging()
@@ -105,7 +107,7 @@ OPENWEATHER_LON = os.getenv("OPENWEATHER_LON")
 OPENWEATHER_UNITS = os.getenv("OPENWEATHER_UNITS", "metric")
 
 DEFAULT_CACHE_DIR = os.getenv("NEWS_READER_DEFAULT_CACHE_DIR", "/tmp")
-DEFAULT_CACHE_TTL = os.getenv("NEWS_READER_DEFAULT_CACHE_TTL", 3600)
+DEFAULT_CACHE_TTL = int(os.getenv("NEWS_READER_DEFAULT_CACHE_TTL", "3600"))
 
 # ElevenLabs Variable configuration
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
@@ -124,26 +126,33 @@ FEED_CONFIG = {
 }
 
 
-def validate_cron(cron_expr):
-    """Validate the cron expression."""
+def validate_cron(cron_expr: str) -> bool:
+    """Validate the cron expression.
+
+    Args:
+        cron_expr: The cron expression to validate.
+
+    Returns:
+        True if valid, False otherwise.
+    """
     try:
         croniter(cron_expr)
         return True
-    except:
+    except (ValueError, KeyError):
         return False
 
 
-def check_and_create_link_path(source, link_path):
+def check_and_create_link_path(source: str, link_path: str) -> bool:
     """Attempt to create a symbolic link, fallback to copying if linking fails.
 
     Args:
-        source (str): The source file path.
-        link_path (str): The target symbolic link path.
+        source: The source file path.
+        link_path: The target symbolic link path.
 
     Returns:
-        bool: True if either linking or copying succeeds, False otherwise.
+        True if either linking or copying succeeds, False otherwise.
     """
-    source = Path(source)
+    source_path = Path(source)
     link_path = Path(link_path)
     directory = link_path.parent
 
@@ -162,12 +171,13 @@ def check_and_create_link_path(source, link_path):
     try:
         if link_path.exists() or link_path.is_symlink():
             link_path.unlink()
-        link_path.symlink_to(source)
-        logging.info(f"Created symbolic link '{link_path}' -> '{source}'")
+        link_path.symlink_to(source_path)
+        logging.info(f"Created symbolic link '{link_path}' -> '{source_path}'")
         return True
     except Exception as e:
         logging.warning(
-            f"Failed to create symbolic link '{link_path}' -> '{source}': {e}"
+            f"Failed to create symbolic link '{
+                link_path}' -> '{source_path}': {e}"
         )
 
     # Fallback to copying the file
@@ -176,23 +186,23 @@ def check_and_create_link_path(source, link_path):
             link_path.unlink()
         import shutil
 
-        shutil.copy2(source, link_path)
-        logging.info(f"Copied '{source}' to '{link_path}'")
+        shutil.copy2(source_path, link_path)
+        logging.info(f"Copied '{source_path}' to '{link_path}'")
         return True
     except Exception as e:
-        logging.error(f"Failed to copy '{source}' to '{link_path}': {e}")
+        logging.error(f"Failed to copy '{source_path}' to '{link_path}': {e}")
         logging.error(traceback.format_exc())
         return False
 
 
-def load_lexicon(file_path):
+def load_lexicon(file_path: str) -> Dict[str, Any]:
     """Load lexicon dictionary from a JSON file.
 
     Args:
-        file_path (str): Path to the JSON file containing the lexicon.
+        file_path: Path to the JSON file containing the lexicon.
 
     Returns:
-        dict: Dictionary containing the lexicon for translation/conversion.
+        Dictionary containing the lexicon for translation/conversion.
     """
     try:
         with open(file_path, "r", encoding="utf-8") as file:
@@ -204,12 +214,23 @@ def load_lexicon(file_path):
 
 
 def generate_hash(text: str) -> str:
-    """Generate SHA-256 hash for the given text."""
+    """Generate SHA-256 hash for the given text.
+
+    Args:
+        text: The input text.
+
+    Returns:
+        The SHA-256 hash as a hexadecimal string.
+    """
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def get_cache_dir() -> Path:
-    """Get the cache directory path."""
+def get_cache_dir() -> Optional[Path]:
+    """Get the cache directory path.
+
+    Returns:
+        Path object representing the cache directory, or None if disabled.
+    """
     cache_dir = os.getenv("NEWS_READER_CACHE_DIR", DEFAULT_CACHE_DIR)
     if cache_dir.lower() == "none":
         return None
@@ -217,12 +238,25 @@ def get_cache_dir() -> Path:
 
 
 def is_cache_enabled() -> bool:
-    """Check whether caching is enabled."""
+    """Check whether caching is enabled.
+
+    Returns:
+        True if caching is enabled, False otherwise.
+    """
     return get_cache_dir() is not None
 
 
-def cache_audio(hash_value: str, data: bytes, output_format: str) -> Path:
-    """Cache the audio data using the hash value as filename."""
+def cache_audio(hash_value: str, data: bytes, output_format: str) -> Optional[Path]:
+    """Cache the audio data using the hash value as filename.
+
+    Args:
+        hash_value: The hash value used as the filename.
+        data: The audio data to cache.
+        output_format: The audio format extension.
+
+    Returns:
+        Path to the cached file, or None if caching is disabled.
+    """
     cache_dir = get_cache_dir()
     if cache_dir is None:
         return None
@@ -234,14 +268,15 @@ def cache_audio(hash_value: str, data: bytes, output_format: str) -> Path:
     return cache_file
 
 
-def get_cached_audio(hash_value: str, output_format: str) -> AudioSegment:
+def get_cached_audio(hash_value: str, output_format: str) -> Optional[AudioSegment]:
     """Retrieve cached audio if available.
 
     Args:
-        hash_value (str): The hash value used to store the audio.
+        hash_value: The hash value used to store the audio.
+        output_format: The audio format extension.
 
     Returns:
-        AudioSegment: The cached audio segment if available, otherwise None.
+        The cached AudioSegment if available, otherwise None.
     """
     cache_dir = get_cache_dir()
     if cache_dir is None:
@@ -258,82 +293,93 @@ def get_cached_audio(hash_value: str, output_format: str) -> AudioSegment:
     return None
 
 
-def cleanup_cache():
+def cleanup_cache() -> None:
     """Clean up cache by removing files not used within the TTL period."""
     cache_dir = get_cache_dir()
     if cache_dir is None or not cache_dir.exists():
         return
 
-    ttl_seconds = int(os.getenv("NEWS_READER_CACHE_TTL", DEFAULT_CACHE_TTL))
+    ttl_seconds = DEFAULT_CACHE_TTL
     ttl_delta = timedelta(seconds=ttl_seconds)
     now = datetime.now()
+    if cache_dir.exists():
+        for cache_file in cache_dir.glob("*.audio"):
+            last_access_time = datetime.fromtimestamp(
+                cache_file.stat().st_atime)
+            if now - last_access_time > ttl_delta:
+                cache_file.unlink()
+                logging.info(f"Deleted cached file: {cache_file}")
 
-    for cache_file in cache_dir.glob("*.audio"):
-        last_access_time = datetime.fromtimestamp(cache_file.stat().st_atime)
-        if now - last_access_time > ttl_delta:
-            cache_file.unlink()
-            logging.info(f"Deleted cached file: {cache_file}")
 
-
-def apply_lexicon(text, lexicon):
+def apply_lexicon(text: str, lexicon: Dict[str, Any]) -> str:
     """Apply lexicon translations to the given text.
 
     Args:
-        text (str): The original text to be converted.
-        lexicon (dict): Dictionary containing the lexicon for translation/conversion.
+        text: The original text to be converted.
+        lexicon: Dictionary containing the lexicon for translation/conversion.
 
     Returns:
-        str: The text after applying lexicon conversions.
+        The text after applying lexicon conversions.
     """
 
-    # Sort and apply case-sensitive direct text to translation mappings (prioritize longer matches)
+    # Sort and apply case-sensitive direct text to translation mappings
     direct_sensitive = sorted(
         lexicon.get("direct_sensitive", {}).items(), key=lambda x: -len(x[0])
     )
     for original, translation in direct_sensitive:
         # Use regex with word boundaries for exact word match
-        pattern = re.compile(r'\b' + re.escape(original) + r'\b')
+        pattern = re.compile(r"\b" + re.escape(original) + r"\b")
         text = pattern.sub(translation, text)
 
-    # Sort and apply case-insensitive direct text to translation mappings (prioritize longer matches)
+    # Sort and apply case-insensitive direct text to translation mappings
     direct_insensitive = sorted(
         lexicon.get("direct_insensitive", {}).items(), key=lambda x: -len(x[0])
     )
     for original, translation in direct_insensitive:
         # Use regex with word boundaries for exact word match and case insensitivity
         pattern = re.compile(
-            r'\b' + re.escape(original) + r'\b', re.IGNORECASE)
+            r"\b" + re.escape(original) + r"\b", re.IGNORECASE)
         text = pattern.sub(translation, text)
 
     # Apply regex patterns with named groups
-    for pattern, translation in lexicon.get("regex", {}).items():
+    for pattern_str, translation in lexicon.get("regex", {}).items():
         try:
-            text = re.sub(pattern, translation, text)
+            pattern = re.compile(pattern_str)
+            text = pattern.sub(translation, text)
         except re.error as e:
-            logging.error(f"Regex error with pattern '{pattern}': {e}")
+            logging.error(f"Regex error with pattern '{pattern_str}': {e}")
             logging.error(traceback.format_exc())
 
     return text
 
 
-# Example usage within the existing script
-def process_text_for_tts(text):
+def process_text_for_tts(text: str) -> str:
     """Process text using the lexicon before sending to TTS engine.
 
     Args:
-        text (str): The original text to be processed.
+        text: The original text to be processed.
 
     Returns:
-        str: The processed text.
+        The processed text.
     """
     lexicon = load_lexicon(LEXICON_JSON_PATH)
     return apply_lexicon(text, lexicon)
 
 
 def generate_mixed_audio_and_track_timestamps(
-    sfx_file, speech_audio, timing, start_offset
-):
-    """Generate the mixed audio segment based on the provided timing, tracking timestamps."""
+    sfx_file: str, speech_audio: AudioSegment, timing: str, start_offset: float
+) -> Tuple[AudioSegment, float]:
+    """Generate the mixed audio segment based on the provided timing, tracking timestamps.
+
+    Args:
+        sfx_file: Path to the sound effect file.
+        speech_audio: The speech audio segment.
+        timing: Timing offset as a string.
+        start_offset: Starting offset in milliseconds.
+
+    Returns:
+        A tuple containing the combined audio segment and the speech start time in seconds.
+    """
     sfx_audio = AudioSegment.from_file(sfx_file)
 
     logging.info(f"Mixing audio with timing: {timing}")
@@ -357,10 +403,8 @@ def generate_mixed_audio_and_track_timestamps(
             speech_start_time = start_offset + timing_offset
             if timing_offset + speech_duration > sfx_duration:
                 # Add remaining speech to the end if extends beyond SFX
-                combined_audio = (
-                    combined_audio +
+                combined_audio = combined_audio + \
                     speech_audio[sfx_duration - timing_offset:]
-                )
     else:
         logging.info("No overlay timing specified, appending speech to SFX")
         combined_audio = sfx_audio + speech_audio
@@ -370,39 +414,63 @@ def generate_mixed_audio_and_track_timestamps(
     return combined_audio, speech_start_time / 1000
 
 
-def format_timestamp(seconds):
-    """Convert float seconds to a timestamp in [MM:SS.ss] format."""
+def format_timestamp(seconds: float) -> str:
+    """Convert float seconds to a timestamp in [MM:SS.ss] format.
+
+    Args:
+        seconds: The number of seconds.
+
+    Returns:
+        The formatted timestamp string.
+    """
     minutes = int(seconds // 60)
     remainder_seconds = seconds % 60
     return f"{minutes:02d}:{remainder_seconds:05.2f}"
 
 
-def parse_rss_feed(feed_url, config):
-    """Parses the RSS feed, filtering out ignored articles using regex patterns
-    and sorts the articles from most recent to oldest.
+def parse_rss_feed(feed_url: str, config: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Parses the RSS feed, adds age and freshness descriptor to each news item.
 
     Args:
-        feed_url (str): URL of the RSS feed.
-        config (dict): Configuration dictionary for field mappings and ignore patterns.
+        feed_url: URL of the RSS feed.
+        config: Configuration dictionary for field mappings and ignore patterns.
 
     Returns:
-        list: List of dictionaries, each representing a news item, sorted by most recent.
+        List of dictionaries, each representing a news item, sorted by most recent.
     """
     feed = feedparser.parse(
         feed_url,
         agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
     )
-    parsed_items = []
+    parsed_items: List[Dict[str, Any]] = []
+
+    # Get thresholds in seconds from environment variables
+    try:
+        stale_threshold = int(
+            # Default 12 hours
+            os.getenv("NEWS_READER_ARTICLE_STALE", "43200"))
+        ignore_threshold = int(
+            # Default 24 hours
+            os.getenv("NEWS_READER_ARTICLE_IGNORE", "86400"))
+    except ValueError as e:
+        logging.error(f"Invalid threshold value in environment variable: {e}")
+        stale_threshold = 43200  # Default to 12 hours
+        ignore_threshold = 86400  # Default to 24 hours
+
+    # Ensure that ignore_threshold is greater than stale_threshold
+    if ignore_threshold < stale_threshold:
+        logging.warning(
+            "NEWS_READER_ARTICLE_IGNORE is less than NEWS_READER_ARTICLE_STALE, adjusting ignore_threshold"
+        )
+        ignore_threshold = stale_threshold + 1
 
     for entry in feed.entries:
         logging.info(f"Processing entry: {entry.title}")
-        if any(
-            re.search(pattern, entry.title) for pattern in config["IGNORE_PATTERNS"]
-        ):
+        if any(re.search(pattern, entry.title) for pattern in config["IGNORE_PATTERNS"]):
             continue
 
         categories = [clean_text(cat["term"]) for cat in entry.get("tags", [])]
-        item = {
+        item: Dict[str, Any] = {
             config_field: clean_text(entry.get(feed_field, ""))
             for config_field, feed_field in config.items()
             if config_field not in ["IGNORE_PATTERNS", "CATEGORY"]
@@ -410,37 +478,68 @@ def parse_rss_feed(feed_url, config):
         item["CATEGORY"] = ", ".join(categories) if categories else "General"
 
         # Ensure we correctly parse the published date
+        published_date: Optional[datetime] = None
         if hasattr(entry, "published_parsed"):
-            published_date = datetime(*entry.published_parsed[:6])
-            item["PUBLISHED"] = published_date
+            try:
+                timestamp = calendar.timegm(entry.published_parsed)
+                published_date = datetime.fromtimestamp(
+                    timestamp, tz=timezone.utc)
+                item["PUBLISHED"] = published_date
+            except Exception as e:
+                logging.error(f"Error parsing published date: {e}")
+                item["PUBLISHED"] = None
         elif "published" in entry:
             try:
-                published_date = datetime.strptime(
-                    entry.published, "%a, %d %b %Y %H:%M:%S %Z"
-                )
+                parsed_date = datetime.strptime(
+                    entry.published, "%a, %d %b %Y %H:%M:%S %Z")
+                if parsed_date.tzinfo is None:
+                    published_date = parsed_date.replace(tzinfo=timezone.utc)
+                else:
+                    published_date = parsed_date
                 item["PUBLISHED"] = published_date
             except ValueError:
                 item["PUBLISHED"] = None
         else:
             item["PUBLISHED"] = None
 
+        # Compute AGE_IN_SECONDS
+        if item["PUBLISHED"] is not None:
+            published_date = item["PUBLISHED"]
+            current_time = datetime.now(timezone.utc)
+            age_timedelta = current_time - published_date
+            item["AGE_IN_SECONDS"] = int(age_timedelta.total_seconds())
+        else:
+            item["AGE_IN_SECONDS"] = None
+
+        # Determine FRESHNESS_DESCRIPTOR
+        if item["AGE_IN_SECONDS"] is not None:
+            age_in_seconds = item["AGE_IN_SECONDS"]
+            if age_in_seconds <= stale_threshold:
+                item["FRESHNESS_DESCRIPTOR"] = "fresh"
+            elif age_in_seconds <= ignore_threshold:
+                item["FRESHNESS_DESCRIPTOR"] = "stale"
+            else:
+                item["FRESHNESS_DESCRIPTOR"] = "ignore"
+        else:
+            item["FRESHNESS_DESCRIPTOR"] = "fresh"
+
         parsed_items.append(item)
 
     # Sort the parsed items by the published date in descending order
-    parsed_items.sort(key=lambda x: x["PUBLISHED"]
-                      or datetime.min, reverse=True)
+    parsed_items.sort(key=lambda x: x.get(
+        "PUBLISHED", datetime.min), reverse=True)
 
     return parsed_items
 
 
-def fetch_bom_data(product_id):
+def fetch_bom_data(product_id: str) -> Optional[str]:
     """Fetches the BOM data from the FTP server for the provided product ID.
 
     Args:
-        product_id (str): The BOM product ID.
+        product_id: The BOM product ID.
 
     Returns:
-        str or None: Weather information as a string if successful, None otherwise.
+        Weather information as a string if successful, None otherwise.
     """
     ftp_url = "ftp.bom.gov.au"
     ftp_path = f"anon/gen/fwo/{product_id}.xml"
@@ -449,13 +548,13 @@ def fetch_bom_data(product_id):
         # Connect to the FTP server and retrieve the file
         ftp = FTP(ftp_url)
         ftp.login()
-        weather_data = []
+        weather_data_bytes: List[bytes] = []
 
-        ftp.retrbinary("RETR " + ftp_path, weather_data.append)
+        ftp.retrbinary("RETR " + ftp_path, weather_data_bytes.append)
         ftp.quit()
 
         # Join the retrieved binary data and parse as XML
-        weather_data = b"".join(weather_data)
+        weather_data = b"".join(weather_data_bytes)
         root = ET.fromstring(weather_data)
 
         # Find the first area that has forecast data
@@ -464,67 +563,48 @@ def fetch_bom_data(product_id):
 
             if forecast_period_now is not None:
                 forecast_icon_code = forecast_period_now.find(
-                    "element[@type='forecast_icon_code']"
-                )
+                    "element[@type='forecast_icon_code']")
 
                 if forecast_icon_code is not None:
                     description = area.get("description")
+                    forecast_now_precis_element = forecast_period_now.find(
+                        "text[@type='precis']")
+                    forecast_now_pop_element = forecast_period_now.find(
+                        "text[@type='probability_of_precipitation']"
+                    )
                     forecast_now_precis = (
-                        forecast_period_now.find("text[@type='precis']").text
-                        if forecast_period_now.find("text[@type='precis']") is not None
-                        else "No description"
+                        forecast_now_precis_element.text if forecast_now_precis_element is not None else "No description"
                     )
                     forecast_now_pop = (
-                        forecast_period_now.find(
-                            "text[@type='probability_of_precipitation']"
-                        ).text
-                        if forecast_period_now.find(
-                            "text[@type='probability_of_precipitation']"
-                        )
-                        is not None
-                        else "No data"
+                        forecast_now_pop_element.text if forecast_now_pop_element is not None else "No data"
                     )
 
                     # Get forecast period for the immediate future
                     forecast_period_future = area.find(
                         "forecast-period[@index='1']")
                     if forecast_period_future is not None:
+                        future_min_temp_element = forecast_period_future.find(
+                            "element[@type='air_temperature_minimum']")
+                        future_max_temp_element = forecast_period_future.find(
+                            "element[@type='air_temperature_maximum']")
                         future_min_temp = (
-                            forecast_period_future.find(
-                                "element[@type='air_temperature_minimum']"
-                            ).text
-                            if forecast_period_future.find(
-                                "element[@type='air_temperature_minimum']"
-                            )
-                            is not None
-                            else "No data"
+                            future_min_temp_element.text if future_min_temp_element is not None else "No data"
                         )
                         future_max_temp = (
-                            forecast_period_future.find(
-                                "element[@type='air_temperature_maximum']"
-                            ).text
-                            if forecast_period_future.find(
-                                "element[@type='air_temperature_maximum']"
-                            )
-                            is not None
-                            else "No data"
+                            future_max_temp_element.text if future_max_temp_element is not None else "No data"
+                        )
+                        forecast_future_precis_element = forecast_period_future.find(
+                            "text[@type='precis']")
+                        forecast_future_pop_element = forecast_period_future.find(
+                            "text[@type='probability_of_precipitation']"
                         )
                         forecast_future_precis = (
-                            forecast_period_future.find(
-                                "text[@type='precis']").text
-                            if forecast_period_future.find("text[@type='precis']")
-                            is not None
+                            forecast_future_precis_element.text
+                            if forecast_future_precis_element is not None
                             else "No description"
                         )
                         forecast_future_pop = (
-                            forecast_period_future.find(
-                                "text[@type='probability_of_precipitation']"
-                            ).text
-                            if forecast_period_future.find(
-                                "text[@type='probability_of_precipitation']"
-                            )
-                            is not None
-                            else "No data"
+                            forecast_future_pop_element.text if forecast_future_pop_element is not None else "No data"
                         )
 
                         return (
@@ -547,18 +627,20 @@ def fetch_bom_data(product_id):
         return None
 
 
-def fetch_openweather_data(api_key, lat, lon, units, weather_json_path):
+def fetch_openweather_data(
+    api_key: str, lat: str, lon: str, units: str, weather_json_path: str
+) -> Optional[dict]:
     """Fetches weather data from OpenWeatherMap API and caches the result in a JSON file.
 
     Args:
-        api_key (str): The OpenWeatherMap API key.
-        lat (str): The latitude of the location for which to fetch weather data.
-        lon (str): The longitude of the location for which to fetch weather data.
-        units (str): Units of measurement ("standard", "metric", or "imperial").
-        weather_json_path (str): Path to the JSON file for storing fetched weather data.
+        api_key: The OpenWeatherMap API key.
+        lat: Latitude of the location.
+        lon: Longitude of the location.
+        units: Units of measurement ("standard", "metric", or "imperial").
+        weather_json_path: Path to the JSON file for storing fetched weather data.
 
     Returns:
-        dict: Weather information as a dictionary if successful, None otherwise.
+        Weather information as a dictionary if successful, None otherwise.
     """
     if not api_key or not lat or not lon:
         logging.error("OpenWeather API key, latitude, or longitude not set.")
@@ -573,16 +655,13 @@ def fetch_openweather_data(api_key, lat, lon, units, weather_json_path):
             with open(weather_json_path, "r", encoding="utf-8") as file:
                 weather_data = json.load(file)
                 fetched_time = datetime.strptime(
-                    weather_data["dt"], "%Y-%m-%dT%H:%M:%SZ"
-                )
+                    weather_data["dt"], "%Y-%m-%dT%H:%M:%SZ")
                 fetched_time = fetched_time.replace(tzinfo=timezone.utc)
                 if current_time - fetched_time < timedelta(minutes=15):
                     return weather_data["data"]
         except (json.JSONDecodeError, KeyError, ValueError) as e:
-            logging.warning(
-                f"Error reading or parsing weather JSON file: {
-                    e}. Fetching new data."
-            )
+            logging.warning(f"Error reading or parsing weather JSON file: {
+                            e}. Fetching new data.")
 
     # Fetch new data from OpenWeatherMap API due to stale data or parsing error
     weather_api_url = f"https://api.openweathermap.org/data/3.0/onecall?lat={
@@ -609,16 +688,34 @@ def fetch_openweather_data(api_key, lat, lon, units, weather_json_path):
         return None
 
 
-def convert_wind_speed(speed, units):
-    """Convert wind speed to the appropriate unit."""
+def convert_wind_speed(speed: float, units: str) -> float:
+    """Convert wind speed to the appropriate unit.
+
+    Args:
+        speed: Wind speed in m/s.
+        units: Units of measurement ("metric" or "imperial").
+
+    Returns:
+        Wind speed converted to km/h or mph.
+    """
     if units == "metric":
         # Convert m/s to km/h
         return speed * 3.6
+    elif units == "imperial":
+        # Convert m/s to mph
+        return speed * 2.237
     return speed
 
 
-def wind_direction(deg):
-    """Convert wind direction in degrees to compass direction."""
+def wind_direction(degrees: float) -> str:
+    """Convert wind direction in degrees to compass direction.
+
+    Args:
+        degrees: Wind direction in degrees.
+
+    Returns:
+        The compass direction as a string.
+    """
     directions = [
         "North",
         "North North East",
@@ -637,17 +734,26 @@ def wind_direction(deg):
         "North West",
         "North North West",
     ]
-    idx = int((deg + 11.25) / 22.5) % 16
+    idx = int((degrees + 11.25) / 22.5) % 16
     return directions[idx]
 
 
-def format_datetime(dt):
-    """Format datetime to a full and human-readable format."""
-    # Suffixes for day of the month
-    def day_suffix(d): return (
-        "th" if 10 <= d % 100 <= 20 else {
-            1: "st", 2: "nd", 3: "rd"}.get(d % 10, "th")
-    )
+def format_datetime(dt: datetime) -> str:
+    """Format datetime to a full and human-readable format.
+
+    Args:
+        dt: The datetime object.
+
+    Returns:
+        A formatted datetime string.
+    """
+
+    def day_suffix(d: int) -> str:
+        if 10 <= d % 100 <= 20:
+            return "th"
+        else:
+            return {1: "st", 2: "nd", 3: "rd"}.get(d % 10, "th")
+
     day = dt.day
     suffix = day_suffix(day)
     formatted_datetime = dt.strftime(
@@ -661,17 +767,9 @@ def validate_and_get(dct: Dict[str, Any], keys: List[Union[str, int]]) -> Option
     Args:
         dct: The dictionary to retrieve the value from.
         keys: A list of keys representing the path to the desired value.
-              Can include both string keys for dictionaries and integer keys for list-like structures.
 
     Returns:
         The value if found; None if any key is missing or invalid.
-
-    Example:
-        >>> data = {'a': {'b': {'c': 1}}}
-        >>> validate_and_get(data, ['a', 'b', 'c'])
-        1
-        >>> validate_and_get(data, ['a', 'x', 'c'])
-        None
     """
     current_level = dct
 
@@ -687,7 +785,7 @@ def validate_and_get(dct: Dict[str, Any], keys: List[Union[str, int]]) -> Option
     return current_level
 
 
-def generate_openweather_weather_report(data, units="metric"):
+def generate_openweather_weather_report(data: dict, units: str = "metric") -> str:
     """Generate a weather report from JSON data.
 
     Args:
@@ -695,7 +793,7 @@ def generate_openweather_weather_report(data, units="metric"):
         units: Units of measurement ("metric" or "imperial").
 
     Returns:
-        str: A formatted weather report, or a message if data is missing.
+        A formatted weather report, or a message if data is missing.
     """
     # Required keys at the top level of the data.
     top_level_keys = ["timezone_offset", "current", "minutely", "daily"]
@@ -750,7 +848,6 @@ def generate_openweather_weather_report(data, units="metric"):
     sunset = datetime.fromtimestamp(
         current_weather["sunset"], timezone(timedelta(seconds=timezone_offset))
     )
-
     # Unit labels.
     temp_unit = "°C" if units == "metric" else "°F"
     wind_speed_unit = "km/h" if units == "metric" else "mph"
@@ -814,42 +911,54 @@ def generate_openweather_weather_report(data, units="metric"):
     return full_report
 
 
-def clean_text(input_string):
-    """Remove HTML tags, non-human-readable content, and excess whitespace from the text."""
+def clean_text(input_string: str) -> str:
+    """Remove HTML tags, non-human-readable content, and excess whitespace from the text.
+
+    Args:
+        input_string: The input string containing HTML or unwanted content.
+
+    Returns:
+        The cleaned text.
+    """
     cleanr = re.compile("<.*?>")
     cleantext = re.sub(cleanr, "", html.unescape(input_string))
     cleaned_whitespace = re.sub(r"\s+", " ", cleantext)
     return cleaned_whitespace.strip()
 
 
-def get_timing_value(env_key, default="None"):
+def get_timing_value(env_key: str, default: str = "None") -> str:
     """Retrieve the timing value from the environment.
 
     Args:
-        env_key (str): The environment variable key.
-        default (str): The default value if the variable is not set.
+        env_key: The environment variable key.
+        default: The default value if the variable is not set.
 
     Returns:
-        str: The timing value as a string.
+        The timing value as a string.
     """
     return os.getenv(env_key, default)
 
 
 def generate_news_script(
-    news_items, prompt_instructions, station_name, reader_name, current_time, api_key
-):
+    news_items: List[Dict[str, Any]],
+    prompt_instructions: str,
+    station_name: str,
+    reader_name: str,
+    current_time: datetime,
+    api_key: str,
+) -> str:
     """Generates a news script using the OpenAI API.
 
     Args:
-        news_items (list): List of dictionaries representing news articles.
-        prompt_instructions (str): Prompt instructions for GPT-4.
-        station_name (str): Name of the station.
-        reader_name (str): Name of the news reader.
-        current_time (str): Current time.
-        api_key (str): OpenAI API key.
+        news_items: List of dictionaries representing news articles.
+        prompt_instructions: Prompt instructions for GPT-4.
+        station_name: Name of the station.
+        reader_name: Name of the news reader.
+        current_time: Current datetime object.
+        api_key: OpenAI API key.
 
     Returns:
-        str: Generated script.
+        Generated script.
 
     Raises:
         ValueError: If news_items is empty.
@@ -863,8 +972,12 @@ def generate_news_script(
     max_tokens = 8192
     max_completion_tokens = 4095
     prompt_length = len(prompt_instructions.split())
-    station_ident = f'Station Name is "{station_name}"\nStation city is "{
-        STATION_CITY}"\nStation country is "{STATION_COUNTRY}"\nNews reader name is "{reader_name}"'
+    station_ident = (
+        f'Station Name is "{station_name}"\n'
+        f'Station city is "{STATION_CITY}"\n'
+        f'Station country is "{STATION_COUNTRY}"\n'
+        f'News reader name is "{reader_name}"'
+    )
     time_ident = f'Current date and time is "{current_time}"\n'
 
     combined_prompt = time_ident + station_ident + "\n\n"
@@ -881,18 +994,25 @@ def generate_news_script(
         # Include published date if available
         published_date = item.get("PUBLISHED", None)
         if published_date and published_date != "Unknown":
-            published_date = published_date.strftime(
+            published_date_str = published_date.strftime(
                 "%A, %B %d, %Y at %I:%M %p %Z")
-            date_line = f"   **Published on:** {published_date}\n"
+            date_line = f"   **Published on:** {published_date_str}\n"
         else:
             date_line = ""
+
+        # Include Age in seconds and Freshness Descriptor
+        age_in_seconds = item.get("AGE_IN_SECONDS", "Unknown")
+        freshness_descriptor = item.get("FRESHNESS_DESCRIPTOR", "Unknown")
 
         new_entry = (
             f"{index + 1}. **Headline:** {title}\n"
             f"   **Category:** {item.get('CATEGORY', 'General')}\n"
             f"{date_line}"
+            f"   **Age in seconds:** {age_in_seconds}\n"
+            f"   **Freshness Descriptor:** {freshness_descriptor}\n"
             f"   **Description:** {item['DESCRIPTION']}\n\n"
         )
+
         new_entry_length = len(new_entry.split())
 
         if prompt_length + news_length + new_entry_length > max_tokens:
@@ -1833,6 +1953,8 @@ def generate_news_audio():
                 looped_bed_audio, position=adjusted_article_start_time
             )
             final_audio = combined_audio
+    else:
+        logging.info("No music bed file found or start/end time not set.")
 
     # Export AudioSegment to a BytesIO stream in the specified format
     output_bytes_io = BytesIO()
