@@ -29,7 +29,7 @@ Transform a list of news items into a coherent, engaging radio news script that 
     - Always discards sports or sports adjacent stories. This includes major events like the olympics.
     - Discard "Clickbait" style news items, ie "This company has grown to overtake all the competition, find out more"
     - Group stories that are related together. If two or more stories are related, ensure they are together.
-    - Select stories based on their importance and timeliness. Each story has a timestamp, newer stories should always be preferred over older ones.
+    - Select stories based on their importance and timeliness. Each story has an age in seconds and freshness, newer stories should always be preferred over older ones.
     - The news read should start with major international stories, then national, then local to fill out the five minutes.{% if have_weather %}
     - Weather should be read as part of the signoff, not in the news read.{% endif %}
 
@@ -63,6 +63,7 @@ Transform a list of news items into a coherent, engaging radio news script that 
       ```
     - Do not have an article break SFX after the last article. Just denote the news outro.
     - Do not modify the naming of the SFX events.
+    - SFX events must appear at correct points in the script.
 
 6. **Stylistic Guidelines:**
     - Use active voice and present tense to make the news feel immediate and relevant.
@@ -103,13 +104,19 @@ Transform a list of news items into a coherent, engaging radio news script that 
    **Category:** weather
    **Description:** Weather in {{ station_city }}, Australia: Shower or two, with a 60% chance of precipitation. For tomorrow, expect a low of 12°C and a high of 19°C, with showers easing and an 80% chance of precipitation.
 
-2. **Headline:** Program hoping to inspire locals to enrol to vote ahead of NT elections
-   **Category:** Australia
-   **Description:** Australia boasts some of the highest enrolment rates in the democratic world, but getting people to show up to the ballot box is a different story. In the Northern Territory, where voter turnout is persistently low, it’s hoped a new engagement program will help inspire locals to get involved ahead of elections in August. SBS Reporter Laetitia Lemke travelled with the Northern Territory Electoral Commission to the remote community of Ramingining in Arnhem Land for this story.
+2. **Headline:** A call for stem cell donors on World Bone Marrow Day
+   **Category:** Health
+   **Published on:** Friday, September 20, 2024 at 10:30 PM UTC
+   **Age in seconds:** 8491
+   **Freshness Descriptor:** fresh
+   **Description:** Each year, 19,000 Australians are diagnosed with blood cancer and about 1,000 of them approach the Australian Bone Marrow Donor Registry looking for a stem cell donor. The registry says Australia is facing a critical shortage of registered stem cell donors from all cultural backgrounds. Lisa Smith is the CEO of the Australian Bone Marrow Donor Registry. She spoke to SBS Macedonian's Ana Kotaleska.
 
-3. **Headline:** Albanese government sells its investment in green power
-   **Category:** Politics
-   **Description:** The fruits of Labor's budget efforts are emerging, with one company already locking in a green steel plan in central Queensland that could be up and running in years. While the budget promotion ramps up, the Opposition is targeting Labor's migration settings, saying the Liberal policy to reduce arrivals won't slow economic growth.
+3. **Headline:** Australians among world's biggest cocaine users
+   **Category:** Australia
+   **Published on:** Friday, September 20, 2024 at 10:13 AM UTC
+   **Age in seconds:** 52686
+   **Freshness Descriptor:** stale
+   **Description:** Australians are among the world's biggest cocaine users. Now a major bust of Sydney's biggest cocaine syndicate has sparked a debate over who is responsible for the prevalence of the drug.
 
 **Output:**
 ```
