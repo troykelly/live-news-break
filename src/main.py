@@ -1367,6 +1367,7 @@ def openai_segments_to_speech(
     api_key: str,
     voice: str,
     model: str,
+    prompt: str,
     voice_settings: dict = {},
 ) -> List[AudioSegment]:
     """Generate speech using OpenAI API.
@@ -1394,7 +1395,7 @@ def openai_segments_to_speech(
         is_last_segment = i == len(segments) - 1
 
         response = openai_client.audio.speech.create(
-            model=model, voice=voice, input=segment, response_format="flac"
+            model=model, voice=voice, input=segment, instructions=prompt, response_format="flac"
         )
         logging.info(f"Successfully converted segment {i + 1}/{len(segments)}")
         audio_segment = AudioSegment.from_file(BytesIO(response.content))
@@ -1753,6 +1754,8 @@ def generate_news_audio():
             "Valid weather data not available. Skipping weather report.")
 
     prompt_file_path = os.getenv("NEWS_READER_PROMPT_FILE", "./prompt.md")
+    tts_prompt_file_path = os.getenv(
+        "NEWS_READER_PROMPT_FILE", "./tts_prompt.md")
     handlers = TemplateHandlers(
         current_time=current_time,
         station_name=station_name,
@@ -1768,6 +1771,15 @@ def generate_news_audio():
         prompt_instructions = render_template(prompt_instructions, handlers)
     except Exception as e:
         logging.error(f"Error reading prompt file: {e}")
+        logging.error(traceback.format_exc())
+        return
+
+    try:
+        tts_prompt_instructions = read_prompt_file(tts_prompt_file_path)
+        tts_prompt_instructions = render_template(
+            tts_prompt_instructions, handlers)
+    except Exception as e:
+        logging.error(f"Error reading tts prompt file: {e}")
         logging.error(traceback.format_exc())
         return
 
@@ -1848,6 +1860,7 @@ def generate_news_audio():
                 openai_api_key,
                 tts_voice,
                 tts_model,
+                tts_prompt_instructions,
                 voice_provider_options,
             )
         else:
