@@ -37,7 +37,8 @@
         "HTTPS": "Hypertext Transfer Protocol Secure",
         "EDI": "Electronic Data Interchange",
         "ERP": "Enterprise Resource Planning",
-        "CRM": "Customer Relationship Management"
+        "CRM": "Customer Relationship Management",
+        "XXXX": "Four X"
     },
     "direct_insensitive": {
         "quasar": "ˈkweɪzɑɹ",

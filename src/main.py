@@ -126,6 +126,16 @@ FEED_CONFIG = {
 }
 
 
+def get_last_sentence(text: str) -> str:
+    sentences = re.findall(r'[^.!?]*[.!?]', text.strip())
+    return sentences[-1].strip() if sentences else ""
+
+
+def get_first_sentence(text: str) -> str:
+    sentences = re.findall(r'[^.!?]*[.!?]', text.strip())
+    return sentences[0].strip() if sentences else ""
+
+
 def validate_cron(cron_expr: str) -> bool:
     """Validate the cron expression.
 
@@ -1367,6 +1377,7 @@ def openai_segments_to_speech(
     api_key: str,
     voice: str,
     model: str,
+    prompt: str,
     voice_settings: dict = {},
 ) -> List[AudioSegment]:
     """Generate speech using OpenAI API.
@@ -1393,10 +1404,38 @@ def openai_segments_to_speech(
         is_first_segment = i == 0
         is_last_segment = i == len(segments) - 1
 
+        if is_first_segment:
+            context_for_prompt = "You are reading the introduction to a news broadcast."
+        elif is_last_segment:
+            context_for_prompt = "You are reading the conclusion to a news broadcast."
+        else:
+            context_for_prompt = f"You are reading segment {i + 1} of a news broadcast. There are {len(segments)} segments total."
+
+        # Properly add the last sentence of the previous segment
+        if i > 0:
+            previous_segment = segments[i - 1]
+            last_sentence = get_last_sentence(previous_segment)
+            context_for_prompt += f"\n\tThe last sentence of the previous news segment was: {last_sentence}"
+
+        # Properly add the first sentence of the next segment
+        if i < len(segments) - 1:
+            next_segment = segments[i + 1]
+            next_sentence = get_first_sentence(next_segment)
+            context_for_prompt += f"\n\tThe first sentence of the next news segment is: {next_sentence}"
+
+        # Append the context to the end of the prompt
+        prompt_with_context = f"{prompt}\n\nContext: {context_for_prompt}"
+
         response = openai_client.audio.speech.create(
-            model=model, voice=voice, input=segment, response_format="flac"
+            model=model,
+            voice=voice,
+            input=segment,
+            instructions=prompt_with_context,
+            response_format="flac"
         )
+
         logging.info(f"Successfully converted segment {i + 1}/{len(segments)}")
+
         audio_segment = AudioSegment.from_file(BytesIO(response.content))
         normalized_audio = audio_segment.apply_gain(-audio_segment.max_dBFS)
         audio_segments.append(normalized_audio)
@@ -1753,6 +1792,8 @@ def generate_news_audio():
             "Valid weather data not available. Skipping weather report.")
 
     prompt_file_path = os.getenv("NEWS_READER_PROMPT_FILE", "./prompt.md")
+    tts_prompt_file_path = os.getenv(
+        "NEWS_READER_PROMPT_FILE", "./tts_prompt.md")
     handlers = TemplateHandlers(
         current_time=current_time,
         station_name=station_name,
@@ -1768,6 +1809,15 @@ def generate_news_audio():
         prompt_instructions = render_template(prompt_instructions, handlers)
     except Exception as e:
         logging.error(f"Error reading prompt file: {e}")
+        logging.error(traceback.format_exc())
+        return
+
+    try:
+        tts_prompt_instructions = read_prompt_file(tts_prompt_file_path)
+        tts_prompt_instructions = render_template(
+            tts_prompt_instructions, handlers)
+    except Exception as e:
+        logging.error(f"Error reading tts prompt file: {e}")
         logging.error(traceback.format_exc())
         return
 
@@ -1848,6 +1898,7 @@ def generate_news_audio():
                 openai_api_key,
                 tts_voice,
                 tts_model,
+                tts_prompt_instructions,
                 voice_provider_options,
             )
         else:
