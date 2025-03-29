@@ -1425,6 +1425,9 @@ def openai_segments_to_speech(
 
         # Append the context to the end of the prompt
         prompt_with_context = f"{prompt}\n\nContext: {context_for_prompt}"
+        logging.debug(
+            f"Prompt with context ({len(prompt_with_context)}): {prompt_with_context}")
+        logging.debug(f"Text for speech {len(segment)}: {segment}")
 
         response = openai_client.audio.speech.create(
             model=model,
@@ -1793,7 +1796,7 @@ def generate_news_audio():
 
     prompt_file_path = os.getenv("NEWS_READER_PROMPT_FILE", "./prompt.md")
     tts_prompt_file_path = os.getenv(
-        "NEWS_READER_PROMPT_FILE", "./tts_prompt.md")
+        "NEWS_READER_TTS_PROMPT_FILE", "./tts_prompt.md")
     handlers = TemplateHandlers(
         current_time=current_time,
         station_name=station_name,
