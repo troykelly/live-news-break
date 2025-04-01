@@ -17,9 +17,9 @@ audioread==3.0.1
     # via
     #   -r requirements.in
     #   pyacoustid
-boto3==1.37.24
+boto3==1.37.25
     # via -r requirements.in
-botocore==1.37.24
+botocore==1.37.25
     # via
     #   -r requirements.in
     #   boto3
