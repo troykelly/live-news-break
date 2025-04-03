@@ -17,9 +17,9 @@ audioread==3.0.1
     # via
     #   -r requirements.in
     #   pyacoustid
-boto3==1.37.24
+boto3==1.37.26
     # via -r requirements.in
-botocore==1.37.24
+botocore==1.37.26
     # via
     #   -r requirements.in
     #   boto3
@@ -93,7 +93,7 @@ pydantic==2.11.1
     # via
     #   -r requirements.in
     #   openai
-pydantic-core==2.33.0
+pydantic-core==2.33.1
     # via
     #   -r requirements.in
     #   pydantic
