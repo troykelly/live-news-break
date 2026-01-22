@@ -149,7 +149,7 @@ urllib3==2.4.0
     #   -r requirements.in
     #   botocore
     #   requests
-wheel==0.45.1
+wheel==0.46.2
     # via -r requirements.in
 
 # The following packages are considered to be unsafe in a requirements file:
