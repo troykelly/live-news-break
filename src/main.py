@@ -2,6 +2,7 @@
 
 import os
 import re
+import base64
 import feedparser
 import openai
 import pytz
@@ -111,6 +112,9 @@ DEFAULT_CACHE_TTL = int(os.getenv("NEWS_READER_DEFAULT_CACHE_TTL", "3600"))
 
 # ElevenLabs Variable configuration
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
+
+# 60db Variable configuration
+DB60_API_KEY = os.getenv("DB60_API_KEY")
 
 # RSS Feed configuration
 FEED_CONFIG = {
@@ -1541,6 +1545,126 @@ def elevenlabs_segments_to_speech(
     return audio_segments
 
 
+def db60_segments_to_speech(
+    segments: List[str],
+    api_key: str,
+    voice: str,
+    model: str,
+    voice_settings: dict = {},
+) -> List[AudioSegment]:
+    """Generate speech using the 60db (https://60db.ai) TTS API.
+
+    Mirrors ``elevenlabs_segments_to_speech`` so the calling pipeline can treat
+    every provider identically: it accepts the same arguments and returns an
+    ordered list of normalized ``AudioSegment`` objects.
+
+    The 60db API authenticates with a Bearer token, resolves voices by id, and
+    returns audio as base64-encoded data inside a JSON envelope (unlike
+    ElevenLabs, which streams raw audio bytes). 60db does not support request
+    stitching, so each segment is synthesized independently.
+
+    Args:
+        segments (list of str): The phrases to be converted to speech.
+        api_key (str): 60db API key.
+        voice (str): Chosen voice name or voice_id for the TTS.
+        model (str): Unused by 60db (the model is bound to the voice); kept for
+            signature parity with the other providers.
+        voice_settings (dict): Optional overrides sourced from ``60DB_*``
+            environment variables, e.g. ``stability``, ``similarity``,
+            ``speed``, ``enhance``, ``output_format``.
+
+    Returns:
+        list of AudioSegment: Ordered list of `AudioSegment` objects representing
+        the converted phrases, or ``None`` if the voice list cannot be fetched.
+
+    Raises:
+        ValueError: If the named voice cannot be resolved to a voice_id.
+        RuntimeError: If a synthesis request fails.
+    """
+    api_url = "https://api.60db.ai"
+    api_endpoints = {
+        "voices": f"{api_url}/myvoices",
+        "synthesize": f"{api_url}/tts-synthesize",
+    }
+
+    api_headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    # Resolve the voice name to a voice_id. If the supplied value already looks
+    # like an id (i.e. it matches a voice_id directly), use it as-is.
+    try:
+        voices_response = requests.get(
+            api_endpoints["voices"], headers=api_headers)
+        voices_response.raise_for_status()
+        voices_data = voices_response.json()
+        db60_voices = voices_data.get("data", [])
+    except requests.RequestException as e:
+        logging.error(f"Failed to fetch data from 60db: {e}")
+        logging.error(traceback.format_exc())
+        return None
+
+    voice_id = next(
+        (
+            v["voice_id"]
+            for v in db60_voices
+            if v.get("name", "").lower() == voice.lower()
+            or v.get("voice_id") == voice
+        ),
+        None,
+    )
+    if not voice_id:
+        raise ValueError(
+            f"The specified voice '{voice}' does not exist in 60db.")
+
+    # Pull tunable parameters from voice_settings (populated from 60DB_* env
+    # vars), falling back to the documented 60db defaults.
+    output_format = str(voice_settings.get("output_format", "wav"))
+    speed = voice_settings.get("speed", 1)
+    stability = voice_settings.get("stability", 50)
+    similarity = voice_settings.get("similarity", 75)
+    enhance = voice_settings.get("enhance", True)
+
+    audio_segments: List[AudioSegment] = []
+
+    for i, segment in enumerate(segments):
+        response = requests.post(
+            api_endpoints["synthesize"],
+            json={
+                "text": segment,
+                "voice_id": voice_id,
+                "output_format": output_format,
+                "speed": speed,
+                "stability": stability,
+                "similarity": similarity,
+                "enhance": enhance,
+            },
+            headers=api_headers,
+        )
+
+        if response.status_code != 200:
+            raise RuntimeError(
+                f"Error encountered, status: {response.status_code}, "
+                f"content: {response.text}"
+            )
+
+        payload = response.json()
+        if not payload.get("success") or not payload.get("audio_base64"):
+            raise RuntimeError(
+                f"60db synthesis failed for segment {i + 1}: "
+                f"{payload.get('message', 'no audio returned')}"
+            )
+
+        logging.info(f"Successfully converted segment {i + 1}/{len(segments)}")
+        audio_bytes = base64.b64decode(payload["audio_base64"])
+        audio_segment = AudioSegment.from_file(BytesIO(audio_bytes))
+        normalized_audio = audio_segment.apply_gain(-audio_segment.max_dBFS)
+        audio_segments.append(normalized_audio)
+
+    return audio_segments
+
+
 def generate_voice_options(provider_name):
     """Generate voice options for a specific TTS provider from environment variables.
 
@@ -1891,6 +2015,14 @@ def generate_news_audio():
             vo_segments = elevenlabs_segments_to_speech(
                 vo_segments_text,
                 ELEVENLABS_API_KEY,
+                tts_voice,
+                tts_model,
+                voice_provider_options,
+            )
+        elif tts_provider == "60db":
+            vo_segments = db60_segments_to_speech(
+                vo_segments_text,
+                DB60_API_KEY,
                 tts_voice,
                 tts_model,
                 voice_provider_options,

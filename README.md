@@ -19,13 +19,23 @@ Listen to the demo here: [https://audio.com/troy-8/audio/troykelly-live-news-bre
 
 ## Speech Generation Notes
 
-We support generating your news read using OpenAI or ElevenLabs text to speech.
+We support generating your news read using OpenAI, ElevenLabs, or [60db](https://60db.ai) text to speech. Select the provider with `NEWS_READER_TTS_PROVIDER` (`openai`, `elevenlabs`, or `60db`).
 
 Although we support ElevenLabs, *DON'T USE IT* you will be wasting your time and money.
 
 ElevenLabs have absolutly no interest in their API users, and their voices aren't capable of reading a full news read.
 
 OpenAI's voices may stumble over a word or phrase, but trust me - ElevenLabs is a total waste of your time.
+
+### 60db
+
+60db is a text-to-speech provider that authenticates with a Bearer token and exposes a simple REST synthesis endpoint. To use it:
+
+1. Set `NEWS_READER_TTS_PROVIDER=60db`.
+2. Set `DB60_API_KEY` to your 60db API key.
+3. Set `NEWS_READER_TTS_VOICE` to a voice **name** (as it appears in your 60db account) or a `voice_id`. The script resolves names to ids automatically via the `GET https://api.60db.ai/myvoices` endpoint.
+
+Optional voice tuning is read from `60DB_*` environment variables (see the [60db section](#60db-configuration) below). Note that `NEWS_READER_TTS_MODEL` has no effect with 60db — the model is bound to the chosen voice. 60db also does not support cross-segment "request stitching", so each script segment is synthesized independently.
 
 ## Test
 
@@ -111,6 +121,9 @@ This section provides an overview and explanation of the environment variables u
 - **`ELEVENLABS_API_KEY`**: API key for ElevenLabs, used for TTS voice generation.
   - **Example:** `abc123`
 
+- **`DB60_API_KEY`**: API key for [60db](https://60db.ai), used for TTS voice generation when `NEWS_READER_TTS_PROVIDER=60db`.
+  - **Example:** `abc123`
+
 - **`NEWS_READER_CRON`**: Cron expression to schedule the news generation. If not set, the script runs once.
   - **Example:** `13,28,43,58 * * * *`
 
@@ -157,13 +170,28 @@ This section provides an overview and explanation of the environment variables u
   - **Default:** `tts-1`
   - **Example:** `tts-1-hd`
 
-- **`NEWS_READER_TTS_PROVIDER`**: TTS provider to use.
+- **`NEWS_READER_TTS_PROVIDER`**: TTS provider to use (`openai`, `elevenlabs`, or `60db`).
   - **Default:** `openai`
-  - **Example:** `elevenlabs`
+  - **Example:** `60db`
 
 - **`NEWS_READER_OUTPUT_FORMAT`**: Format for the output audio file.
   - **Default:** `flac`
   - **Example:** `mp3`
+
+### 60db Configuration
+
+These variables only apply when `NEWS_READER_TTS_PROVIDER=60db`. They are optional and map directly onto the 60db synthesis parameters (the `60DB_` prefix is stripped and the remainder is lower-cased). If unset, the documented 60db defaults are used.
+
+- **`60DB_STABILITY`**: Voice stability, `0`–`100` (lower = more expressive, higher = more consistent).
+  - **Default:** `50`
+- **`60DB_SIMILARITY`**: How closely the output matches the source voice, `0`–`100`.
+  - **Default:** `75`
+- **`60DB_SPEED`**: Speech speed multiplier, `0.5`–`2.0`.
+  - **Default:** `1`
+- **`60DB_ENHANCE`**: Enable audio enhancement (`true`/`false`).
+  - **Default:** `true`
+- **`60DB_OUTPUT_FORMAT`**: Per-segment synthesis format requested from 60db (`mp3`, `wav`, `ogg`, `flac`). This is decoded internally and does not change the final `NEWS_READER_OUTPUT_FORMAT`.
+  - **Default:** `wav`
 
 ### Audio Files
 
